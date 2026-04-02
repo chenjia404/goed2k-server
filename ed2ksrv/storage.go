@@ -3,6 +3,7 @@ package ed2ksrv
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -69,6 +70,9 @@ type jsonCatalogStore struct {
 func (s *jsonCatalogStore) Load() ([]FileRecord, error) {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return []FileRecord{}, nil
+		}
 		return nil, err
 	}
 	var disk catalogDisk
