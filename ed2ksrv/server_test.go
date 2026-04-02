@@ -343,7 +343,7 @@ func TestAdminFilesClientsAndStats(t *testing.T) {
 
 	assertUnauthorized(t, baseURL+"/api/stats")
 
-	uiResponse, err := http.Get(baseURL + "/")
+	uiResponse, err := http.Get(baseURL + "/?lang=zh")
 	if err != nil {
 		t.Fatalf("get admin ui: %v", err)
 	}

@@ -1,238 +1,38 @@
 package ed2ksrv
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"embed"
 	"fmt"
 	"html/template"
 	"net/http"
 	"strings"
 )
 
+//go:embed templates/admin.html
+var adminHTMLTemplateFS embed.FS
+
+var adminPageTemplate *template.Template
+
+func init() {
+	b, err := adminHTMLTemplateFS.ReadFile("templates/admin.html")
+	if err != nil {
+		panic(err)
+	}
+	adminPageTemplate = template.Must(template.New("admin-ui").Parse(string(b)))
+}
+
 type adminUIData struct {
 	ServerName   string
 	Description  string
 	TokenEnabled bool
+	Lang         string
+	IsEN         bool
+	IsZH         bool
+	T            adminHTMLStrings
+	I18NBase64   string
 }
-
-var adminPageTemplate = template.Must(template.New("admin-ui").Parse(`<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{.ServerName}} Control</title>
-  <link rel="stylesheet" href="/app.css">
-</head>
-<body data-token-enabled="{{.TokenEnabled}}">
-  <div class="ambient ambient-a"></div>
-  <div class="ambient ambient-b"></div>
-  <main class="shell">
-    <header class="hero">
-      <div>
-        <p class="eyebrow">eD2k Server Console</p>
-        <h1>{{.ServerName}}</h1>
-        <p class="hero-copy">{{.Description}}</p>
-      </div>
-      <div class="hero-actions">
-        <button id="refreshButton" type="button">Refresh</button>
-        <button id="logoutButton" type="button" class="ghost">Logout</button>
-      </div>
-    </header>
-
-    <section id="loginPanel" class="panel login-panel hidden">
-      <div>
-        <p class="panel-kicker">Admin Access</p>
-        <h2>登录管理界面</h2>
-        <p class="muted">输入 X-Admin-Token 对应的令牌后，页面会通过管理 API 拉取统计、客户端、共享文件和审计日志。</p>
-      </div>
-      <form id="loginForm" class="login-form">
-        <label for="adminToken">Admin Token</label>
-        <input id="adminToken" name="adminToken" type="password" autocomplete="current-password" placeholder="输入管理令牌">
-        <button type="submit">Login</button>
-      </form>
-    </section>
-
-    <section id="dashboard" class="dashboard hidden">
-      <section class="stats-grid">
-        <article class="stat-card accent-a">
-          <span>当前客户端</span>
-          <strong id="statClients">0</strong>
-          <small id="statConnections">总连接 0</small>
-        </article>
-        <article class="stat-card accent-b">
-          <span>共享文件</span>
-          <strong id="statFiles">0</strong>
-          <small id="statRegistered">注册 0 / 移除 0</small>
-        </article>
-        <article class="stat-card accent-c">
-          <span>搜索请求</span>
-          <strong id="statSearches">0</strong>
-          <small id="statSearchEntries">结果项 0</small>
-        </article>
-        <article class="stat-card accent-d">
-          <span>网络流量</span>
-          <strong id="statTraffic">0 B</strong>
-          <small id="statPackets">入 0 / 出 0</small>
-        </article>
-      </section>
-
-      <section class="content-grid">
-        <article class="panel wide-panel">
-          <div class="panel-head">
-            <div>
-              <p class="panel-kicker">Clients</p>
-              <h2>在线客户端</h2>
-            </div>
-            <label class="compact-field">
-              <span>搜索</span>
-              <input id="clientSearch" type="search" placeholder="名称、地址、Hash">
-            </label>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>名称</th>
-                  <th>远端地址</th>
-                  <th>监听端点</th>
-                  <th>最后活跃</th>
-                </tr>
-              </thead>
-              <tbody id="clientsBody"></tbody>
-            </table>
-          </div>
-          <div class="pager">
-            <button id="clientsPrev" type="button" class="ghost">上一页</button>
-            <span id="clientsPageInfo">第 1 页</span>
-            <button id="clientsNext" type="button" class="ghost">下一页</button>
-          </div>
-        </article>
-
-        <article class="panel wide-panel">
-          <div class="panel-head">
-            <div>
-              <p class="panel-kicker">Files</p>
-              <h2>共享文件</h2>
-            </div>
-            <div class="head-actions">
-              <label class="compact-field">
-                <span>搜索</span>
-                <input id="fileSearch" type="search" placeholder="文件名、Hash">
-              </label>
-              <label class="compact-field">
-                <span>类型</span>
-                <input id="fileTypeFilter" type="search" placeholder="Audio / Video / Iso">
-              </label>
-              <button id="deleteSelectedButton" type="button" class="ghost danger">批量删除</button>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th></th>
-                  <th>文件名</th>
-                  <th>类型</th>
-                  <th>大小</th>
-                  <th>来源</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody id="filesBody"></tbody>
-            </table>
-          </div>
-          <div class="pager">
-            <button id="filesPrev" type="button" class="ghost">上一页</button>
-            <span id="filesPageInfo">第 1 页</span>
-            <button id="filesNext" type="button" class="ghost">下一页</button>
-          </div>
-        </article>
-
-        <article class="panel form-panel">
-          <div class="panel-head">
-            <div>
-              <p class="panel-kicker">Register</p>
-              <h2>新增共享文件</h2>
-            </div>
-          </div>
-          <form id="fileForm" class="file-form">
-            <label>
-              <span>Hash</span>
-              <input name="hash" type="text" maxlength="32" required placeholder="32 位 ED2K Hash">
-            </label>
-            <label>
-              <span>文件名</span>
-              <input name="name" type="text" required placeholder="example.iso">
-            </label>
-            <label>
-              <span>大小</span>
-              <input name="size" type="number" min="0" required placeholder="4096">
-            </label>
-            <label>
-              <span>类型</span>
-              <input name="file_type" type="text" placeholder="Iso">
-            </label>
-            <label>
-              <span>扩展名</span>
-              <input name="extension" type="text" placeholder="iso">
-            </label>
-            <label>
-              <span>来源主机</span>
-              <input name="host" type="text" placeholder="127.0.0.1">
-            </label>
-            <label>
-              <span>来源端口</span>
-              <input name="port" type="number" min="1" max="65535" placeholder="4662">
-            </label>
-            <button type="submit">保存共享文件</button>
-          </form>
-        </article>
-
-        <article class="panel detail-panel">
-          <div class="panel-head">
-            <div>
-              <p class="panel-kicker">Inspect</p>
-              <h2>详情</h2>
-            </div>
-          </div>
-          <pre id="detailView" class="detail-view">选择客户端或文件后，这里显示完整 JSON。</pre>
-        </article>
-
-        <article class="panel audit-panel wide-panel">
-          <div class="panel-head">
-            <div>
-              <p class="panel-kicker">Audit</p>
-              <h2>操作审计日志</h2>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>时间</th>
-                  <th>动作</th>
-                  <th>资源</th>
-                  <th>标识</th>
-                  <th>来源</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody id="auditBody"></tbody>
-            </table>
-          </div>
-          <div class="pager">
-            <button id="auditPrev" type="button" class="ghost">上一页</button>
-            <span id="auditPageInfo">第 1 页</span>
-            <button id="auditNext" type="button" class="ghost">下一页</button>
-          </div>
-        </article>
-      </section>
-    </section>
-
-    <div id="toast" class="toast hidden"></div>
-  </main>
-  <script src="/app.js"></script>
-</body>
-</html>`))
 
 func (s *Server) handleAdminUI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -244,10 +44,22 @@ func (s *Server) handleAdminUI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	lang := resolveAdminLocale(r)
+	htmlStr, jsStr := getAdminLocalePack(lang)
+	raw, err := json.Marshal(jsStr)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("marshal admin i18n: %v", err), http.StatusInternalServerError)
+		return
+	}
 	data := adminUIData{
 		ServerName:   s.cfg.ServerName,
 		Description:  s.cfg.ServerDescription,
 		TokenEnabled: strings.TrimSpace(s.cfg.AdminToken) != "",
+		Lang:         lang,
+		IsEN:         lang == "en",
+		IsZH:         lang == "zh",
+		T:            htmlStr,
+		I18NBase64:   base64.StdEncoding.EncodeToString(raw),
 	}
 	if err := adminPageTemplate.Execute(w, data); err != nil {
 		http.Error(w, fmt.Sprintf("render admin ui: %v", err), http.StatusInternalServerError)
@@ -281,6 +93,17 @@ func (s *Server) handleAdminCSS(w http.ResponseWriter, r *http.Request) {
 }
 
 const adminUIScript = `(() => {
+  const i18n = JSON.parse(atob(document.getElementById('admin-i18n').dataset.b64));
+  function i18nFmt(tpl, vars) {
+    var s = tpl;
+    if (!vars) {
+      return s;
+    }
+    Object.keys(vars).forEach(function (k) {
+      s = s.split('{' + k + '}').join(String(vars[k]));
+    });
+    return s;
+  }
   const body = document.body;
   const tokenEnabled = body.dataset.tokenEnabled === 'true';
   const loginPanel = document.getElementById('loginPanel');
@@ -339,7 +162,7 @@ const adminUIScript = `(() => {
       headers.set('Content-Type', 'application/json');
     }
     const response = await fetch(path, { ...requestOptions, headers });
-    const payload = await response.json().catch(() => ({ ok: false, error: 'invalid response' }));
+    const payload = await response.json().catch(() => ({ ok: false, error: i18n.invalidResponse }));
     if (!response.ok || !payload.ok) {
       throw new Error(payload.error || ('request failed: ' + response.status));
     }
@@ -366,7 +189,7 @@ const adminUIScript = `(() => {
     if (Number.isNaN(date.getTime())) {
       return value;
     }
-    return date.toLocaleString('zh-CN', { hour12: false });
+    return date.toLocaleString(i18n.dateLocale, { hour12: false });
   }
 
   function updatePager(idPrefix, meta) {
@@ -374,7 +197,7 @@ const adminUIScript = `(() => {
     const perPage = Number(meta.per_page || 10);
     const total = Number(meta.total || 0);
     const totalPages = Math.max(1, Math.ceil(total / perPage));
-    document.getElementById(idPrefix + 'PageInfo').textContent = '第 ' + currentPage + ' / ' + totalPages + ' 页';
+    document.getElementById(idPrefix + 'PageInfo').textContent = i18nFmt(i18n.pagerFmt, { cur: currentPage, total: totalPages });
     document.getElementById(idPrefix + 'Prev').disabled = currentPage <= 1;
     document.getElementById(idPrefix + 'Next').disabled = currentPage >= totalPages;
   }
@@ -393,13 +216,13 @@ const adminUIScript = `(() => {
     const payload = await apiFetch('/api/stats');
     const data = payload.data;
     document.getElementById('statClients').textContent = data.current_clients;
-    document.getElementById('statConnections').textContent = '总连接 ' + data.total_connections;
+    document.getElementById('statConnections').textContent = i18nFmt(i18n.statConnectionsFmt, { n: data.total_connections });
     document.getElementById('statFiles').textContent = data.current_files;
-    document.getElementById('statRegistered').textContent = '注册 ' + data.files_registered + ' / 移除 ' + data.files_removed;
+    document.getElementById('statRegistered').textContent = i18nFmt(i18n.statRegisteredFmt, { reg: data.files_registered, rem: data.files_removed });
     document.getElementById('statSearches').textContent = data.search_requests;
-    document.getElementById('statSearchEntries').textContent = '结果项 ' + data.search_result_entries;
+    document.getElementById('statSearchEntries').textContent = i18nFmt(i18n.statSearchEntriesFmt, { n: data.search_result_entries });
     document.getElementById('statTraffic').textContent = formatBytes((data.inbound_bytes || 0) + (data.outbound_bytes || 0));
-    document.getElementById('statPackets').textContent = '入 ' + data.inbound_packets + ' / 出 ' + data.outbound_packets;
+    document.getElementById('statPackets').textContent = i18nFmt(i18n.statPacketsFmt, { inPkts: data.inbound_packets, outPkts: data.outbound_packets });
   }
 
   async function loadClients() {
@@ -431,7 +254,7 @@ const adminUIScript = `(() => {
       clientsBody.appendChild(row);
     });
     if (!data.length) {
-      clientsBody.innerHTML = '<tr><td colspan="5" class="empty">没有在线客户端</td></tr>';
+      clientsBody.innerHTML = '<tr><td colspan="5" class="empty">' + i18n.emptyClients + '</td></tr>';
     }
     updatePager('clients', payload.meta || {});
   }
@@ -451,7 +274,7 @@ const adminUIScript = `(() => {
   async function batchDeleteSelected() {
     const hashes = Array.from(state.selectedFiles);
     if (!hashes.length) {
-      setToast('没有选中的共享文件', true);
+      setToast(i18n.toastNoSelection, true);
       return;
     }
     await apiFetch('/api/files/batch-delete', {
@@ -459,7 +282,7 @@ const adminUIScript = `(() => {
       body: JSON.stringify({ hashes: hashes })
     });
     state.selectedFiles.clear();
-    setToast('批量删除完成');
+    setToast(i18n.toastBatchDone);
     await refreshAll();
   }
 
@@ -487,7 +310,7 @@ const adminUIScript = `(() => {
         '<td>' + (file.file_type || '-') + '</td>' +
         '<td>' + formatBytes(file.size) + '</td>' +
         '<td>' + (file.sources || 0) + '</td>' +
-        '<td><button type="button" class="ghost danger">删除</button></td>';
+        '<td><button type="button" class="ghost danger">' + i18n.btnDelete + '</button></td>';
       row.querySelector('a').addEventListener('click', function (event) {
         event.preventDefault();
         pushRoute('/files/' + file.hash);
@@ -512,7 +335,7 @@ const adminUIScript = `(() => {
       filesBody.appendChild(row);
     });
     if (!data.length) {
-      filesBody.innerHTML = '<tr><td colspan="6" class="empty">没有共享文件</td></tr>';
+      filesBody.innerHTML = '<tr><td colspan="6" class="empty">' + i18n.emptyFiles + '</td></tr>';
     }
     updatePager('files', payload.meta || {});
   }
@@ -543,7 +366,7 @@ const adminUIScript = `(() => {
       auditBody.appendChild(row);
     });
     if (!data.length) {
-      auditBody.innerHTML = '<tr><td colspan="6" class="empty">暂无审计日志</td></tr>';
+      auditBody.innerHTML = '<tr><td colspan="6" class="empty">' + i18n.emptyAudit + '</td></tr>';
     }
     updatePager('audit', payload.meta || {});
   }
@@ -567,7 +390,7 @@ const adminUIScript = `(() => {
     } catch (error) {
       if (tokenEnabled && /unauthorized/i.test(error.message)) {
         setAuthState(false);
-        setToast('令牌无效，请重新登录', true);
+        setToast(i18n.toastInvalidToken, true);
         return;
       }
       setToast(error.message, true);
@@ -597,7 +420,7 @@ const adminUIScript = `(() => {
     try {
       await apiFetch('/api/files', { method: 'POST', body: JSON.stringify(payload) });
       fileForm.reset();
-      setToast('共享文件已保存');
+      setToast(i18n.toastSaved);
       await refreshAll();
     } catch (error) {
       setToast(error.message, true);
@@ -610,7 +433,7 @@ const adminUIScript = `(() => {
     window.localStorage.removeItem('goed2k_admin_token');
     tokenInput.value = '';
     setAuthState(false);
-    setToast('已退出登录');
+    setToast(i18n.toastLoggedOut);
   });
   deleteSelectedButton.addEventListener('click', function () {
     batchDeleteSelected().catch((error) => setToast(error.message, true));
@@ -717,7 +540,12 @@ h1, h2 { margin: 0; font-family: "Space Grotesk", "IBM Plex Sans", sans-serif; }
 h1 { font-size: clamp(2.4rem, 4vw, 4.6rem); line-height: 0.95; }
 h2 { font-size: 1.4rem; }
 .hero-copy, .muted { color: var(--muted); max-width: 60ch; }
-.hero-actions, .head-actions { display: flex; gap: 12px; align-items: center; }
+.hero-actions, .head-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.lang-switch { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.lang-switch a { color: var(--muted); text-decoration: none; }
+.lang-switch a:hover { color: var(--ink); }
+.lang-switch a.active { color: var(--accent-3); font-weight: 600; }
+.lang-sep { opacity: 0.45; user-select: none; }
 button { border: 0; border-radius: 999px; padding: 12px 18px; background: var(--ink); color: #fff; cursor: pointer; transition: transform 140ms ease, opacity 140ms ease, background 140ms ease; }
 button:hover { transform: translateY(-1px); }
 button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }

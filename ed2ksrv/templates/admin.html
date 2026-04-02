@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="{{.T.LangAttr}}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.ServerName}} {{.T.TitleSuffix}}</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body data-token-enabled="{{.TokenEnabled}}" data-lang="{{.Lang}}">
+  <div id="admin-i18n" hidden data-b64="{{.I18NBase64}}"></div>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">{{.T.Eyebrow}}</p>
+        <h1>{{.ServerName}}</h1>
+        <p class="hero-copy">{{.Description}}</p>
+      </div>
+      <div class="hero-actions">
+        <div class="lang-switch" role="navigation" aria-label="Language">
+          <a href="?lang=en" {{if .IsEN}}class="active"{{end}}>{{.T.LangEN}}</a>
+          <span class="lang-sep" aria-hidden="true">·</span>
+          <a href="?lang=zh" {{if .IsZH}}class="active"{{end}}>{{.T.LangZH}}</a>
+        </div>
+        <button id="refreshButton" type="button">{{.T.BtnRefresh}}</button>
+        <button id="logoutButton" type="button" class="ghost">{{.T.BtnLogout}}</button>
+      </div>
+    </header>
+
+    <section id="loginPanel" class="panel login-panel hidden">
+      <div>
+        <p class="panel-kicker">{{.T.LoginKicker}}</p>
+        <h2>{{.T.LoginTitle}}</h2>
+        <p class="muted">{{.T.LoginHelp}}</p>
+      </div>
+      <form id="loginForm" class="login-form">
+        <label for="adminToken">{{.T.LabelToken}}</label>
+        <input id="adminToken" name="adminToken" type="password" autocomplete="current-password" placeholder="{{.T.PlaceholderToken}}">
+        <button type="submit">{{.T.BtnLogin}}</button>
+      </form>
+    </section>
+
+    <section id="dashboard" class="dashboard hidden">
+      <section class="stats-grid">
+        <article class="stat-card accent-a">
+          <span>{{.T.StatClients}}</span>
+          <strong id="statClients">0</strong>
+          <small id="statConnections">{{.T.StatConnSmall}}</small>
+        </article>
+        <article class="stat-card accent-b">
+          <span>{{.T.StatFiles}}</span>
+          <strong id="statFiles">0</strong>
+          <small id="statRegistered">{{.T.StatRegSmall}}</small>
+        </article>
+        <article class="stat-card accent-c">
+          <span>{{.T.StatSearches}}</span>
+          <strong id="statSearches">0</strong>
+          <small id="statSearchEntries">{{.T.StatEntriesSmall}}</small>
+        </article>
+        <article class="stat-card accent-d">
+          <span>{{.T.StatTraffic}}</span>
+          <strong id="statTraffic">0 B</strong>
+          <small id="statPackets">{{.T.StatPacketsSmall}}</small>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel wide-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">{{.T.ClientKicker}}</p>
+              <h2>{{.T.ClientTitle}}</h2>
+            </div>
+            <label class="compact-field">
+              <span>{{.T.ClientSearchL}}</span>
+              <input id="clientSearch" type="search" placeholder="{{.T.ClientSearchPh}}">
+            </label>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{{.T.ThID}}</th>
+                  <th>{{.T.ThName}}</th>
+                  <th>{{.T.ThRemote}}</th>
+                  <th>{{.T.ThListen}}</th>
+                  <th>{{.T.ThLastSeen}}</th>
+                </tr>
+              </thead>
+              <tbody id="clientsBody"></tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <button id="clientsPrev" type="button" class="ghost">{{.T.PagerPrev}}</button>
+            <span id="clientsPageInfo">{{.T.PagerPageOne}}</span>
+            <button id="clientsNext" type="button" class="ghost">{{.T.PagerNext}}</button>
+          </div>
+        </article>
+
+        <article class="panel wide-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">{{.T.FilesKicker}}</p>
+              <h2>{{.T.FilesTitle}}</h2>
+            </div>
+            <div class="head-actions">
+              <label class="compact-field">
+                <span>{{.T.FileSearchL}}</span>
+                <input id="fileSearch" type="search" placeholder="{{.T.FileSearchPh}}">
+              </label>
+              <label class="compact-field">
+                <span>{{.T.FileTypeL}}</span>
+                <input id="fileTypeFilter" type="search" placeholder="{{.T.FileTypePh}}">
+              </label>
+              <button id="deleteSelectedButton" type="button" class="ghost danger">{{.T.BtnBatchDelete}}</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{{.T.ThCheck}}</th>
+                  <th>{{.T.ThFName}}</th>
+                  <th>{{.T.ThFType}}</th>
+                  <th>{{.T.ThSize}}</th>
+                  <th>{{.T.ThSources}}</th>
+                  <th>{{.T.ThActions}}</th>
+                </tr>
+              </thead>
+              <tbody id="filesBody"></tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <button id="filesPrev" type="button" class="ghost">{{.T.PagerPrev}}</button>
+            <span id="filesPageInfo">{{.T.PagerPageOne}}</span>
+            <button id="filesNext" type="button" class="ghost">{{.T.PagerNext}}</button>
+          </div>
+        </article>
+
+        <article class="panel form-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">{{.T.RegKicker}}</p>
+              <h2>{{.T.RegTitle}}</h2>
+            </div>
+          </div>
+          <form id="fileForm" class="file-form">
+            <label>
+              <span>{{.T.LHash}}</span>
+              <input name="hash" type="text" maxlength="32" required placeholder="{{.T.PHHash}}">
+            </label>
+            <label>
+              <span>{{.T.LName}}</span>
+              <input name="name" type="text" required placeholder="example.iso">
+            </label>
+            <label>
+              <span>{{.T.LSize}}</span>
+              <input name="size" type="number" min="0" required placeholder="4096">
+            </label>
+            <label>
+              <span>{{.T.LFileType}}</span>
+              <input name="file_type" type="text" placeholder="Iso">
+            </label>
+            <label>
+              <span>{{.T.LExt}}</span>
+              <input name="extension" type="text" placeholder="iso">
+            </label>
+            <label>
+              <span>{{.T.LHost}}</span>
+              <input name="host" type="text" placeholder="127.0.0.1">
+            </label>
+            <label>
+              <span>{{.T.LPort}}</span>
+              <input name="port" type="number" min="1" max="65535" placeholder="{{.T.PHPort}}">
+            </label>
+            <button type="submit">{{.T.BtnSave}}</button>
+          </form>
+        </article>
+
+        <article class="panel detail-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">{{.T.InspKicker}}</p>
+              <h2>{{.T.InspTitle}}</h2>
+            </div>
+          </div>
+          <pre id="detailView" class="detail-view">{{.T.DetailPlaceholder}}</pre>
+        </article>
+
+        <article class="panel audit-panel wide-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">{{.T.AuditKicker}}</p>
+              <h2>{{.T.AuditTitle}}</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{{.T.ThATime}}</th>
+                  <th>{{.T.ThAAction}}</th>
+                  <th>{{.T.ThARes}}</th>
+                  <th>{{.T.ThAID}}</th>
+                  <th>{{.T.ThASrc}}</th>
+                  <th>{{.T.ThAStatus}}</th>
+                </tr>
+              </thead>
+              <tbody id="auditBody"></tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <button id="auditPrev" type="button" class="ghost">{{.T.PagerPrev}}</button>
+            <span id="auditPageInfo">{{.T.PagerPageOne}}</span>
+            <button id="auditNext" type="button" class="ghost">{{.T.PagerNext}}</button>
+          </div>
+        </article>
+      </section>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
