@@ -30,6 +30,8 @@ type Config struct {
 	SearchBatchSize    int    `json:"search_batch_size"`
 	TCPFlags           int32  `json:"tcp_flags"`
 	AuxPort            int32  `json:"aux_port"`
+	// ProtocolObfuscation enables eMule-style TCP obfuscation (DH + RC4) on the ED2K listener when the client starts with a non-ED2K first byte.
+	ProtocolObfuscation bool `json:"protocol_obfuscation"`
 }
 
 // DefaultConfig returns a working baseline configuration.
@@ -41,7 +43,8 @@ func DefaultConfig() Config {
 		ServerDescription:  defaultDescription,
 		Message:            "Welcome to goed2k-server",
 		StorageBackend:     storageBackendJSON,
-		SearchBatchSize:    defaultBatchSize,
+		SearchBatchSize:       defaultBatchSize,
+		ProtocolObfuscation:   true,
 	}
 }
 

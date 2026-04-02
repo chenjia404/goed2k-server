@@ -352,6 +352,28 @@ func (s *Server) PersistCatalog() error {
 }
 
 func (s *Server) handleConn(conn net.Conn) {
+	first := make([]byte, 1)
+	if _, err := io.ReadFull(conn, first); err != nil {
+		_ = conn.Close()
+		return
+	}
+	if s.cfg.ProtocolObfuscation && !isPlainEd2kFirstByte(first[0]) {
+		c2, err := serverObfuscatedHandshake(conn, first[0])
+		if err != nil {
+			s.logger.Warn("obfuscation handshake failed", "remote", conn.RemoteAddr().String(), "err", err)
+			_ = conn.Close()
+			return
+		}
+		conn = c2
+	} else {
+		if !isPlainEd2kFirstByte(first[0]) {
+			s.logger.Warn("rejected non-ed2k first byte (protocol_obfuscation is false)", "remote", conn.RemoteAddr().String())
+			_ = conn.Close()
+			return
+		}
+		conn = &prependConn{Conn: conn, prefix: []byte{first[0]}}
+	}
+
 	tcpAddr, _ := conn.RemoteAddr().(*net.TCPAddr)
 	client := &clientSession{
 		server:       s,
@@ -459,7 +481,14 @@ func (s *Server) handleLogin(client *clientSession, req serverproto.LoginRequest
 			return err
 		}
 	}
-	return client.send("server.IdChange", &serverproto.IdChange{ClientID: assignedID, TCPFlags: s.cfg.TCPFlags, AuxPort: s.cfg.AuxPort})
+	ic := idChangeExtended{
+		ClientID:             assignedID,
+		TCPFlags:             s.cfg.TCPFlags,
+		AuxPort:              s.cfg.AuxPort,
+		ReportedIP:           reportedIPForIdChange(assignedID),
+		ObfuscationTCPPort:   obfuscationTCPPortAdvertised(s.cfg, s.serverTCPPort()),
+	}
+	return client.send("server.IdChange", &ic)
 }
 
 func (s *Server) handleGetServerList(client *clientSession) error {
@@ -621,6 +650,22 @@ func (s *Server) allocateClientID(addr *net.TCPAddr) int32 {
 	clientID := s.nextID
 	s.nextID++
 	return clientID
+}
+
+// serverTCPPort 返回当前 ED2K 监听 TCP 端口，用于 IdChange 中通告混淆端口。
+func (s *Server) serverTCPPort() uint16 {
+	s.mu.RLock()
+	ln := s.listener
+	s.mu.RUnlock()
+	if ln != nil {
+		if ta, ok := ln.Addr().(*net.TCPAddr); ok && ta.Port > 0 {
+			return uint16(ta.Port)
+		}
+	}
+	if a, err := net.ResolveTCPAddr("tcp", s.cfg.ListenAddress); err == nil && a.Port > 0 {
+		return uint16(a.Port)
+	}
+	return 4661
 }
 
 func (s *Server) currentFilesCount() int {

@@ -11,5 +11,6 @@
   "database_table": "shared_files",
   "search_batch_size": 2,
   "tcp_flags": 0,
-  "aux_port": 0
+  "aux_port": 0,
+  "protocol_obfuscation": true
 }
