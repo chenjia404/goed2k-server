@@ -12,5 +12,10 @@
   "search_batch_size": 2,
   "tcp_flags": 0,
   "aux_port": 0,
-  "protocol_obfuscation": true
+  "protocol_obfuscation": true,
+  "server_udp": true,
+  "udp_port_offset": 4,
+  "soft_files_limit": 5000,
+  "hard_files_limit": 200000,
+  "max_users_advertised": 500000
 }

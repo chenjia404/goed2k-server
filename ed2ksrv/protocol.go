@@ -13,8 +13,10 @@ const (
 	opGetServerList  byte = 0x14
 	opSearchRequest  byte = 0x16
 	opGetSources     byte = 0x19
+	opGetSourcesObfu byte = 0x23 // OP_GETSOURCES_OBFU，与 OP_GETSOURCES 请求体相同，应答需用 OP_FOUNDSOURCES_OBFU
 	opCallbackReq    byte = 0x1C
 	opSearchMore     byte = 0x21
+	opFoundSourcesObfu byte = 0x44 // OP_FOUNDSOURCES_OBFU，每源在 IP:端口后多 1 字节 crypt options
 	searchTypeBool   byte = 0x00
 	searchTypeString byte = 0x01
 	searchTypeStrTag byte = 0x02

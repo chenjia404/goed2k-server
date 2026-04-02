@@ -3,6 +3,7 @@ package ed2ksrv
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -18,6 +19,75 @@ import (
 	"github.com/monkeyWie/goed2k/protocol"
 	serverproto "github.com/monkeyWie/goed2k/protocol/server"
 )
+
+func TestGlobServStatUDPReply(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.CatalogPath = filepath.Join("..", "testdata", "catalog.json")
+	cfg.AdminListenAddress = ""
+	cfg.ServerUDP = true
+	cfg.SoftFilesLimit = 4242
+	cfg.HardFilesLimit = 99999
+	cfg.MaxUsersAdvertised = 777
+
+	catalog, err := LoadCatalog(cfg.CatalogPath)
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	server, err := NewServer(cfg, catalog, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	go func() { _ = server.Serve(listener) }()
+	defer shutdownServer(t, server)
+
+	tcpAddr := listener.Addr().(*net.TCPAddr)
+	udpTarget := net.JoinHostPort("127.0.0.1", strconv.Itoa(tcpAddr.Port+4))
+	udpConn, err := net.Dial("udp", udpTarget)
+	if err != nil {
+		t.Fatalf("dial udp: %v", err)
+	}
+	defer udpConn.Close()
+
+	req := make([]byte, 6)
+	req[0] = ed2kUDPHeader
+	req[1] = opGlobServStatReq
+	binary.LittleEndian.PutUint32(req[2:6], 0x11223344)
+	if _, err := udpConn.Write(req); err != nil {
+		t.Fatalf("write udp: %v", err)
+	}
+	_ = udpConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	resp := make([]byte, 64)
+	n, err := udpConn.Read(resp)
+	if err != nil {
+		t.Fatalf("read udp: %v", err)
+	}
+	if n != 2+globServStatResSize {
+		t.Fatalf("expected %d bytes, got %d", 2+globServStatResSize, n)
+	}
+	if resp[0] != ed2kUDPHeader || resp[1] != opGlobServStatRes {
+		t.Fatalf("bad header: %x %x", resp[0], resp[1])
+	}
+	p := resp[2:]
+	if binary.LittleEndian.Uint32(p[0:4]) != 0x11223344 {
+		t.Fatalf("challenge mismatch")
+	}
+	if binary.LittleEndian.Uint32(p[16:20]) != 4242 {
+		t.Fatalf("soft files: %d", binary.LittleEndian.Uint32(p[16:20]))
+	}
+	if binary.LittleEndian.Uint32(p[20:24]) != 99999 {
+		t.Fatalf("hard files")
+	}
+	if binary.LittleEndian.Uint32(p[12:16]) != 777 {
+		t.Fatalf("max users")
+	}
+}
 
 func TestParseSearchRequestMatchesGoed2KEncoding(t *testing.T) {
 	request := serverproto.SearchRequest{

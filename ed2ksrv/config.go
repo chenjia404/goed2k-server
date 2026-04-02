@@ -12,7 +12,7 @@ const (
 	defaultAdminListenAddress = ":8080"
 	defaultServerName         = "goed2k-server"
 	defaultDescription        = "Minimal eD2k/eMule compatible server"
-	defaultBatchSize          = 100000
+	defaultBatchSize          = 200
 )
 
 // Config describes the runtime settings for the ED2K server.
@@ -32,19 +32,30 @@ type Config struct {
 	AuxPort            int32  `json:"aux_port"`
 	// ProtocolObfuscation enables eMule-style TCP obfuscation (DH + RC4) on the ED2K listener when the client starts with a non-ED2K first byte.
 	ProtocolObfuscation bool `json:"protocol_obfuscation"`
+	// ServerUDP listens on TCP 端口 + UDPPortOffset（默认 +4），响应 OP_GLOBSERVSTATREQ，向 eMule 通告软性/硬性文件限制等。
+	ServerUDP          bool   `json:"server_udp"`
+	UDPPortOffset      int    `json:"udp_port_offset"`
+	SoftFilesLimit     int32  `json:"soft_files_limit"`
+	HardFilesLimit     int32  `json:"hard_files_limit"`
+	MaxUsersAdvertised uint32 `json:"max_users_advertised"`
 }
 
 // DefaultConfig returns a working baseline configuration.
 func DefaultConfig() Config {
 	return Config{
-		ListenAddress:      defaultListenAddress,
-		AdminListenAddress: defaultAdminListenAddress,
-		ServerName:         defaultServerName,
-		ServerDescription:  defaultDescription,
-		Message:            "Welcome to goed2k-server",
-		StorageBackend:     storageBackendJSON,
-		SearchBatchSize:       defaultBatchSize,
-		ProtocolObfuscation:   true,
+		ListenAddress:       defaultListenAddress,
+		AdminListenAddress:  defaultAdminListenAddress,
+		ServerName:          defaultServerName,
+		ServerDescription:   defaultDescription,
+		Message:             "Welcome to goed2k-server",
+		StorageBackend:      storageBackendJSON,
+		SearchBatchSize:     defaultBatchSize,
+		ProtocolObfuscation: true,
+		ServerUDP:           true,
+		UDPPortOffset:       4,
+		SoftFilesLimit:      5000,
+		HardFilesLimit:      200000,
+		MaxUsersAdvertised:  500000,
 	}
 }
 
@@ -64,6 +75,15 @@ func (c Config) Normalize() (Config, error) {
 	}
 	if c.SearchBatchSize <= 0 {
 		c.SearchBatchSize = defaultBatchSize
+	}
+	if c.UDPPortOffset == 0 {
+		c.UDPPortOffset = 4
+	}
+	if c.SoftFilesLimit <= 0 {
+		c.SoftFilesLimit = 5000
+	}
+	if c.HardFilesLimit <= 0 {
+		c.HardFilesLimit = 200000
 	}
 	if c.StorageBackend == "" {
 		c.StorageBackend = storageBackendJSON

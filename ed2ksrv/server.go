@@ -3,6 +3,7 @@ package ed2ksrv
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -65,6 +66,7 @@ type Server struct {
 
 	mu            sync.RWMutex
 	listener      net.Listener
+	udpConn       *net.UDPConn
 	adminListener net.Listener
 	clients       map[int32]*clientSession
 	dynamicFiles  map[string]*dynamicSharedFile
@@ -182,6 +184,7 @@ func (s *Server) Serve(listener net.Listener) error {
 	s.mu.Lock()
 	s.listener = listener
 	s.mu.Unlock()
+	s.maybeStartServerUDP()
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -210,6 +213,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	s.mu.Lock()
 	listener := s.listener
+	udpConn := s.udpConn
+	s.udpConn = nil
 	adminListener := s.adminListener
 	clients := make([]*clientSession, 0, len(s.clients))
 	for _, client := range s.clients {
@@ -217,6 +222,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	s.mu.Unlock()
 
+	if udpConn != nil {
+		_ = udpConn.Close()
+	}
 	if listener != nil {
 		_ = listener.Close()
 	}
@@ -445,7 +453,13 @@ func (s *Server) dispatch(client *clientSession, packet byte, body []byte) error
 		if err := req.Get(bytes.NewReader(body)); err != nil {
 			return err
 		}
-		return s.handleGetSources(client, req)
+		return s.handleGetSources(client, req, false)
+	case opGetSourcesObfu:
+		var req serverproto.GetFileSources
+		if err := req.Get(bytes.NewReader(body)); err != nil {
+			return err
+		}
+		return s.handleGetSources(client, req, true)
 	case opCallbackReq:
 		var req serverproto.CallbackRequest
 		if err := req.Get(bytes.NewReader(body)); err != nil {
@@ -567,7 +581,7 @@ func (s *Server) handleSearchMore(client *clientSession) error {
 	return client.send("server.SearchResult", packet)
 }
 
-func (s *Server) handleGetSources(client *clientSession, req serverproto.GetFileSources) error {
+func (s *Server) handleGetSources(client *clientSession, req serverproto.GetFileSources, obfuscatedReply bool) error {
 	sources := s.sourcesAll(req.Hash)
 	if len(sources) > 255 {
 		sources = sources[:255]
@@ -576,6 +590,9 @@ func (s *Server) handleGetSources(client *clientSession, req serverproto.GetFile
 	s.bumpCounter(func(stats *serverCounters) {
 		stats.SourceRequests++
 	})
+	if obfuscatedReply {
+		return client.sendFoundSourcesObfuscated(req.Hash, sources)
+	}
 	return client.send("server.FoundFileSources", &serverproto.FoundFileSources{Hash: req.Hash, Sources: sources})
 }
 
@@ -881,6 +898,54 @@ func (c *clientSession) sendLocked(typeName string, packet protocol.Serializable
 		stats.OutboundBytes += int64(len(raw))
 	})
 	_, err = c.conn.Write(raw)
+	return err
+}
+
+// sendFoundSourcesObfuscated 回复 OP_FOUNDSOURCES_OBFU（0x44）：每源在 endpoint 后多 1 字节连接/混淆选项（aMule PartFile::AddSources）。
+func (c *clientSession) sendFoundSourcesObfuscated(hash protocol.Hash, sources []protocol.Endpoint) error {
+	body := &bytes.Buffer{}
+	if err := protocol.WriteHash(body, hash); err != nil {
+		return err
+	}
+	if len(sources) > 255 {
+		sources = sources[:255]
+	}
+	if err := body.WriteByte(byte(len(sources))); err != nil {
+		return err
+	}
+	for _, ep := range sources {
+		if err := protocol.WriteInt32(body, ep.IP()); err != nil {
+			return err
+		}
+		if err := binary.Write(body, binary.LittleEndian, uint16(ep.Port())); err != nil {
+			return err
+		}
+		if err := body.WriteByte(0); err != nil {
+			return err
+		}
+	}
+	return c.sendRawEd2k(opFoundSourcesObfu, body.Bytes())
+}
+
+func (c *clientSession) sendRawEd2k(opcode byte, body []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	var header protocol.PacketHeader
+	header.ResetWithKey(protocol.PK(protocol.EdonkeyHeader, opcode), int32(len(body)+1))
+	var frame bytes.Buffer
+	if err := header.Put(&frame); err != nil {
+		return err
+	}
+	if _, err := frame.Write(body); err != nil {
+		return err
+	}
+	raw := frame.Bytes()
+	c.noteOutbound(len(raw))
+	c.server.bumpCounter(func(stats *serverCounters) {
+		stats.OutboundPackets++
+		stats.OutboundBytes += int64(len(raw))
+	})
+	_, err := c.conn.Write(raw)
 	return err
 }
 

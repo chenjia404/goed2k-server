@@ -27,6 +27,7 @@
 
 ### 已实现的运行时能力
 
+- eMule 兼容的 **UDP 服务状态**（`OP_GLOBSERVSTATREQ` / `OP_GLOBSERVSTATRES`，用于客户端刷新软性/硬性文件限制等）
 - 动态用户表
 - 运行时统计
 - 动态共享文件注册、更新、断链撤销
@@ -40,6 +41,7 @@
 
 - [cmd/goed2k-server/main.go](goed2k-server/cmd/goed2k-server/main.go): 启动入口
 - [ed2ksrv/server.go](goed2k-server/ed2ksrv/server.go): TCP 服务、动态用户表、统计
+- [ed2ksrv/server_udp.go](goed2k-server/ed2ksrv/server_udp.go): ED2K UDP 服务状态应答
 - [ed2ksrv/admin.go](goed2k-server/ed2ksrv/admin.go): HTTP 管理接口
 - [ed2ksrv/catalog.go](goed2k-server/ed2ksrv/catalog.go): 共享文件目录和持久化
 - [ed2ksrv/offerfiles.go](goed2k-server/ed2ksrv/offerfiles.go): `OP_OFFERFILES` 协议处理
@@ -149,9 +151,17 @@ cp config.example.json config.json
   "database_table": "shared_files",
   "search_batch_size": 2,
   "tcp_flags": 0,
-  "aux_port": 0
+  "aux_port": 0,
+  "protocol_obfuscation": true,
+  "server_udp": true,
+  "udp_port_offset": 4,
+  "soft_files_limit": 5000,
+  "hard_files_limit": 200000,
+  "max_users_advertised": 500000
 }
 ```
+
+完整字段说明见下文「配置项说明」及仓库根目录 [`config.example.json`](config.example.json)。
 
 ### 2. 启动服务
 
@@ -171,6 +181,15 @@ go run ./cmd/goed2k-server -config config.json
 
 - ED2K TCP 服务: `:4661`
 - HTTP 管理接口: `:8080`
+- ED2K UDP（可选，见下）: TCP 监听端口 + `udp_port_offset`（默认 **+4**，即 TCP 为 `4661` 时 UDP 为 **4665**）
+
+### UDP 端口说明（eMule / aMule 客户端）
+
+eMule 会向服务器的 **UDP** 端口发送全局服务状态请求（`OP_GLOBSERVSTATREQ`），服务端应答 `OP_GLOBSERVSTATRES` 后，客户端才能更新服务器列表中的 **软性文件限制、硬性文件限制、最大用户数** 等字段；仅连 TCP 时这些项常为 0。
+
+- **端口计算**：`UDP 端口 = TCP 监听端口 + udp_port_offset`。默认 `udp_port_offset` 为 **4**（与常见 eD2k 客户端约定一致，对应 aMule `SendUDPPacket` 的默认偏移）。
+- **关闭 UDP**：配置 `"server_udp": false` 即可不监听 UDP（客户端上述统计仍可能显示为 0 或旧值）。
+- **防火墙 / 安全组**：除放行 ED2K **TCP** 外，若启用 `server_udp`，请同步放行对应 **UDP** 端口。
 
 ## Docker 运行
 
@@ -186,16 +205,18 @@ docker pull chenjia404/goed2k-server:latest
 
 ```bash
 docker run -d --name goed2k-server \
-  -p 4661:4661 -p 8080:8080 \
+  -p 4661:4661 -p 4665:4665/udp -p 8080:8080 \
   -v /path/to/config.json:/app/config.json:ro \
   chenjia404/goed2k-server:latest
 ```
+
+其中 `4665:4665/udp` 对应默认 TCP `4661` 且 `udp_port_offset` 为 `4` 时的 UDP 端口；若你修改了 `listen_address` 的 TCP 端口，请按 **`TCP 端口 + udp_port_offset`** 调整 UDP 映射。
 
 当 `storage_backend` 为 `json` 时，`catalog_path` 必须指向容器内真实存在的文件，一般通过挂载静态目录或单个 catalog 文件实现，并让配置里的路径与挂载路径一致。示例：主机目录 `/srv/goed2k/`，配置中 `catalog_path` 设为 `/data/catalog.json`：
 
 ```bash
 docker run -d --name goed2k-server \
-  -p 4661:4661 -p 8080:8080 \
+  -p 4661:4661 -p 4665:4665/udp -p 8080:8080 \
   -v /srv/goed2k/config.json:/app/config.json:ro \
   -v /srv/goed2k/catalog.json:/data/catalog.json:ro \
   chenjia404/goed2k-server:latest
@@ -204,7 +225,7 @@ docker run -d --name goed2k-server \
 如需使用其他配置文件路径，可在镜像名之后追加参数（会覆盖默认的 `-config /app/config.json`）：
 
 ```bash
-docker run --rm -p 4661:4661 -p 8080:8080 \
+docker run --rm -p 4661:4661 -p 4665:4665/udp -p 8080:8080 \
   -v /path/to/other.json:/other/config.json:ro \
   chenjia404/goed2k-server:latest -config /other/config.json
 ```
@@ -228,6 +249,12 @@ docker run --rm -p 4661:4661 -p 8080:8080 \
 | `search_batch_size` | 每次搜索分页返回的结果条数 |
 | `tcp_flags` | `IdChange` 中返回的 TCP 标志 |
 | `aux_port` | `IdChange` 中返回的附加端口 |
+| `protocol_obfuscation` | 是否对非 ED2K 首字节的连接做 eMule 风格 TCP 混淆（DH+RC4） |
+| `server_udp` | 是否启用 UDP 服务状态应答（默认 `true`） |
+| `udp_port_offset` | UDP 监听端口相对 TCP 的偏移（默认 `4`，即 TCP `4661` → UDP `4665`） |
+| `soft_files_limit` | 在 UDP 应答中通告的软性文件限制（供 eMule 显示与发布策略） |
+| `hard_files_limit` | 在 UDP 应答中通告的硬性文件限制 |
+| `max_users_advertised` | 在 UDP 应答中通告的最大用户数 |
 
 ### 数据库存储示例
 
