@@ -1,139 +1,141 @@
 # goed2k-server
 
-`github.com/chenjia404/goed2k-server` 是一个用 Go 实现的 ED2K/eMule Server，面向 `github.com/monkeyWie/goed2k` 客户端协议做兼容实现。
+[简体中文](README-CN.md)
 
-当前版本重点提供两部分能力：
+`github.com/chenjia404/goed2k-server` is an ED2K/eMule server implemented in Go, compatible with the `github.com/monkeyWie/goed2k` client protocol.
 
-- ED2K/eMule TCP Server 协议服务
-- HTTP 管理接口
+The current release focuses on two areas:
 
-项目目标不是复刻完整的 eMule 官方服务端，而是提供一个可运行、可测试、可扩展的服务端基础实现，便于你继续扩展协议能力和业务逻辑。
+- ED2K/eMule TCP server protocol
+- HTTP administration API
 
-## 功能特性
+The goal is not to replicate the full official eMule server, but to provide a runnable, testable, extensible server foundation so you can extend protocol behavior and business logic.
 
-### 已实现的 ED2K 协议能力
+## Features
 
-- 客户端登录握手 `LoginRequest`
-- 服务端状态返回 `Status`
-- 服务端消息 `Message`
-- 客户端 ID 分配 `IdChange`
-- 共享文件注册 `OP_OFFERFILES`
-- 搜索请求 `SearchRequest`
-- 搜索翻页 `SearchMore`
-- 文件来源查询 `GetFileSources`
-- 回调请求 `CallbackRequest`
-- 回调通知 `CallbackRequestIncoming`
-- 回调失败 `CallbackRequestFailed`
+### ED2K protocol (implemented)
 
-### 已实现的运行时能力
+- Client login handshake `LoginRequest`
+- Server status `Status`
+- Server message `Message`
+- Client ID assignment `IdChange`
+- Shared file registration `OP_OFFERFILES`
+- Search `SearchRequest`
+- Search pagination `SearchMore`
+- File source lookup `GetFileSources`
+- Callback request `CallbackRequest`
+- Callback notification `CallbackRequestIncoming`
+- Callback failure `CallbackRequestFailed`
 
-- 动态用户表
-- 运行时统计
-- 动态共享文件注册、更新、断链撤销
-- 静态共享目录持久化到 JSON、MySQL 或 PostgreSQL
-- HTTP 管理接口
-- 管理接口 Token 鉴权
-- 列表分页、过滤、排序
-- 健康检查
+### Runtime (implemented)
 
-## 项目结构
+- Dynamic user table
+- Runtime statistics
+- Dynamic shared file registration, updates, and revocation on disconnect
+- Static shared catalog persisted to JSON, MySQL, or PostgreSQL
+- HTTP admin API
+- Admin API token authentication
+- List pagination, filtering, and sorting
+- Health checks
 
-- [cmd/goed2k-server/main.go](/mnt/e/code/goed2k-server/cmd/goed2k-server/main.go): 启动入口
-- [ed2ksrv/server.go](/mnt/e/code/goed2k-server/ed2ksrv/server.go): TCP 服务、动态用户表、统计
-- [ed2ksrv/admin.go](/mnt/e/code/goed2k-server/ed2ksrv/admin.go): HTTP 管理接口
-- [ed2ksrv/catalog.go](/mnt/e/code/goed2k-server/ed2ksrv/catalog.go): 共享文件目录和持久化
-- [ed2ksrv/offerfiles.go](/mnt/e/code/goed2k-server/ed2ksrv/offerfiles.go): `OP_OFFERFILES` 协议处理
-- [ed2ksrv/protocol.go](/mnt/e/code/goed2k-server/ed2ksrv/protocol.go): 搜索请求解析
-- [ed2ksrv/config.go](/mnt/e/code/goed2k-server/ed2ksrv/config.go): 配置结构
-- [config.example.json](/mnt/e/code/goed2k-server/config.example.json): 示例配置
-- [testdata/catalog.json](/mnt/e/code/goed2k-server/testdata/catalog.json): 示例共享目录
+## Project layout
 
-## 安装与引用
+- [cmd/goed2k-server/main.go](cmd/goed2k-server/main.go): entry point
+- [ed2ksrv/server.go](ed2ksrv/server.go): TCP server, dynamic user table, stats
+- [ed2ksrv/admin.go](ed2ksrv/admin.go): HTTP admin API
+- [ed2ksrv/catalog.go](ed2ksrv/catalog.go): shared catalog and persistence
+- [ed2ksrv/offerfiles.go](ed2ksrv/offerfiles.go): `OP_OFFERFILES` handling
+- [ed2ksrv/protocol.go](ed2ksrv/protocol.go): search request parsing
+- [ed2ksrv/config.go](ed2ksrv/config.go): configuration structs
+- [config.example.json](config.example.json): sample config
+- [testdata/catalog.json](testdata/catalog.json): sample shared catalog
 
-### 作为命令行程序运行
+## Install and import
 
-如果你的仓库已经发布到 GitHub，可以直接按模块路径安装：
+### Run as a CLI
+
+If the module is published on GitHub, install by module path:
 
 ```bash
 go install github.com/chenjia404/goed2k-server/cmd/goed2k-server@latest
 ```
 
-安装后可直接运行：
+Then run:
 
 ```bash
 goed2k-server -config config.json
 ```
 
-### 作为 Go 模块引用
+### Import as a Go module
 
-如果你要在自己的项目里引用服务端库包：
+To use the server package in your own project:
 
 ```bash
 go get github.com/chenjia404/goed2k-server@latest
 ```
 
-导入方式：
+Import:
 
 ```go
 import "github.com/chenjia404/goed2k-server/ed2ksrv"
 ```
 
-### goed2k 依赖版本管理
+### goed2k dependency version
 
-当前项目直接依赖远程模块：
+This project depends on the remote module:
 
 ```text
 github.com/monkeyWie/goed2k v0.0.0-20260319015208-6257e6988ff2
 ```
 
-查看当前版本：
+Check the resolved version:
 
 ```bash
 go list -m github.com/monkeyWie/goed2k
 ```
 
-升级到上游最新版本：
+Upgrade to the latest upstream:
 
 ```bash
 go get github.com/monkeyWie/goed2k@latest
 go mod tidy
 ```
 
-固定到指定提交对应的 pseudo-version：
+Pin to a specific pseudo-version:
 
 ```bash
 go get github.com/monkeyWie/goed2k@v0.0.0-20260319015208-6257e6988ff2
 go mod tidy
 ```
 
-升级后建议执行：
+After upgrading, run:
 
 ```bash
 go test ./...
 ```
 
-说明：
+Notes:
 
-- `github.com/monkeyWie/goed2k` 当前没有稳定 tag，因此 Go 会使用 pseudo-version
-- 这种版本格式本质上对应某次具体提交，适合可重复构建
-- 如果后续上游发布正式 tag，可以再切到语义化版本
+- `github.com/monkeyWie/goed2k` does not have stable tags yet, so Go uses pseudo-versions
+- A pseudo-version maps to a specific commit and is suitable for reproducible builds
+- When upstream publishes semantic tags, you can switch to those
 
-## 运行要求
+## Requirements
 
 - Go 1.25+
-- 可访问 `github.com/monkeyWie/goed2k` 模块
+- Network access to the `github.com/monkeyWie/goed2k` module
 
-## 快速开始
+## Quick start
 
-### 1. 准备配置文件
+### 1. Create a config file
 
-复制示例配置：
+Copy the example:
 
 ```bash
 cp config.example.json config.json
 ```
 
-示例配置内容：
+Example contents:
 
 ```json
 {
@@ -153,44 +155,44 @@ cp config.example.json config.json
 }
 ```
 
-### 2. 启动服务
+### 2. Start the server
 
-使用源码启动：
+From module source:
 
 ```bash
 go run github.com/chenjia404/goed2k-server/cmd/goed2k-server -config config.json
 ```
 
-如果你在仓库目录里，也可以：
+Or from a local clone:
 
 ```bash
 go run ./cmd/goed2k-server -config config.json
 ```
 
-启动后默认监听：
+Default listeners:
 
-- ED2K TCP 服务: `:4661`
-- HTTP 管理接口: `:8080`
+- ED2K TCP: `:4661`
+- HTTP admin: `:8080`
 
-## 配置项说明
+## Configuration
 
-| 字段 | 说明 |
+| Field | Description |
 | --- | --- |
-| `listen_address` | ED2K 服务监听地址 |
-| `admin_listen_address` | HTTP 管理接口监听地址 |
-| `admin_token` | 管理接口 Token，非空时必须通过 `X-Admin-Token` 访问 |
-| `server_name` | 服务名称 |
-| `server_description` | 服务描述 |
-| `message` | 客户端连接后收到的服务端消息 |
-| `storage_backend` | 持久化后端，支持 `json`、`mysql`、`pgsql` |
-| `catalog_path` | `json` 后端使用的静态共享目录文件路径 |
-| `database_dsn` | `mysql` 或 `pgsql` 后端使用的连接串 |
-| `database_table` | 数据库存储表名，默认 `shared_files` |
-| `search_batch_size` | 每次搜索分页返回的结果条数 |
-| `tcp_flags` | `IdChange` 中返回的 TCP 标志 |
-| `aux_port` | `IdChange` 中返回的附加端口 |
+| `listen_address` | ED2K TCP listen address |
+| `admin_listen_address` | HTTP admin listen address |
+| `admin_token` | Admin token; if non-empty, requests must send `X-Admin-Token` |
+| `server_name` | Server name |
+| `server_description` | Server description |
+| `message` | Message clients receive after connecting |
+| `storage_backend` | Persistence backend: `json`, `mysql`, or `pgsql` |
+| `catalog_path` | Path to the static shared catalog file for the `json` backend |
+| `database_dsn` | Connection string for `mysql` or `pgsql` |
+| `database_table` | Table name (default `shared_files`) |
+| `search_batch_size` | Results per search page |
+| `tcp_flags` | TCP flags returned in `IdChange` |
+| `aux_port` | Auxiliary port returned in `IdChange` |
 
-### 数据库存储示例
+### Database storage examples
 
 MySQL:
 
@@ -212,18 +214,18 @@ PostgreSQL:
 }
 ```
 
-当使用数据库后端时：
+When using a database backend:
 
-- 启动时会自动建表
-- 静态共享目录会从数据库加载到内存索引
-- 管理接口对静态文件的新增、删除、持久化会写回数据库
-- 运行时 `OP_OFFERFILES` 动态共享仍然只保存在内存里
+- Tables are created automatically on startup
+- The static catalog is loaded from the database into the in-memory index
+- Admin API create/delete/persist operations write back to the database
+- Runtime `OP_OFFERFILES` dynamic shares remain in memory only
 
-## 共享目录格式
+## Shared catalog format
 
-共享目录由 `catalog_path` 指向的 JSON 文件提供。
+The shared catalog is a JSON file pointed to by `catalog_path`.
 
-示例：
+Example:
 
 ```json
 {
@@ -247,48 +249,48 @@ PostgreSQL:
 }
 ```
 
-### 字段说明
+### Field reference
 
-| 字段 | 说明 |
+| Field | Description |
 | --- | --- |
-| `hash` | ED2K 文件 Hash |
-| `name` | 文件名 |
-| `size` | 文件大小 |
-| `file_type` | 文件类型，例如 `Iso`、`Audio` |
-| `extension` | 扩展名 |
-| `media_codec` | 媒体编码，可选 |
-| `media_length` | 媒体时长，可选 |
-| `media_bitrate` | 媒体码率，可选 |
-| `sources` | 来源数，未填时默认取 `endpoints` 数量 |
-| `complete_sources` | 完整来源数，未填时默认等于 `sources` |
-| `endpoints` | 可返回给客户端的来源地址列表 |
+| `hash` | ED2K file hash |
+| `name` | File name |
+| `size` | File size |
+| `file_type` | File type, e.g. `Iso`, `Audio` |
+| `extension` | Extension |
+| `media_codec` | Media codec (optional) |
+| `media_length` | Media duration (optional) |
+| `media_bitrate` | Media bitrate (optional) |
+| `sources` | Source count; defaults to `endpoints` length if omitted |
+| `complete_sources` | Complete sources; defaults to `sources` if omitted |
+| `endpoints` | List of source addresses returned to clients |
 
-## 动态共享文件注册
+## Dynamic shared file registration
 
-客户端登录后可以通过 `OP_OFFERFILES (0x15)` 向服务端注册共享文件。
+After login, clients can register shared files with `OP_OFFERFILES (0x15)`.
 
-当前实现策略：
+Current behavior:
 
-- 客户端上报的共享文件进入运行时动态索引
-- 动态索引参与搜索和来源查询
-- 客户端断开连接后，动态共享文件自动撤销
-- 动态共享文件不会写入静态 `catalog.json`
+- Reported files enter a runtime dynamic index
+- The dynamic index participates in search and source queries
+- On disconnect, dynamic shares are revoked automatically
+- Dynamic shares are not written to the static `catalog.json`
 
-这部分是运行时会话数据，不和 HTTP 管理接口手工维护的静态目录混在同一个持久化层里。
+This is session/runtime data and is not mixed with the static catalog maintained via the HTTP admin API in the same persistence layer.
 
-## HTTP 管理接口
+## HTTP admin API
 
-### 认证方式
+### Authentication
 
-当配置了 `admin_token` 时，请求头必须带：
+When `admin_token` is set, include:
 
 ```http
 X-Admin-Token: change-me
 ```
 
-### 响应格式
+### Response shape
 
-成功响应：
+Success:
 
 ```json
 {
@@ -298,7 +300,7 @@ X-Admin-Token: change-me
 }
 ```
 
-失败响应：
+Error:
 
 ```json
 {
@@ -307,93 +309,93 @@ X-Admin-Token: change-me
 }
 ```
 
-### 健康检查
+### Health
 
 #### `GET /healthz`
 #### `GET /api/healthz`
 
-示例：
+Example:
 
 ```bash
 curl http://127.0.0.1:8080/healthz
 ```
 
-### 统计信息
+### Statistics
 
 #### `GET /api/stats`
 
-示例：
+Example:
 
 ```bash
 curl -H 'X-Admin-Token: change-me' \
   http://127.0.0.1:8080/api/stats
 ```
 
-### 客户端列表
+### Client list
 
 #### `GET /api/clients`
 
-支持参数：
+Query parameters:
 
-- `search`: 按客户端名、远端地址、监听端点、客户端 Hash 模糊过滤
-- `page`: 页码，默认 `1`
-- `per_page`: 每页条数，默认 `50`，最大 `500`
-- `sort`: `id`、`name`、`connected_at`、`last_seen_at`
+- `search`: filter by client name, remote address, listen endpoint, or client hash (substring)
+- `page`: page number (default `1`)
+- `per_page`: page size (default `50`, max `500`)
+- `sort`: `id`, `name`, `connected_at`, `last_seen_at`
 
-示例：
+Example:
 
 ```bash
 curl -H 'X-Admin-Token: change-me' \
   'http://127.0.0.1:8080/api/clients?search=test&page=1&per_page=20&sort=name'
 ```
 
-### 客户端详情
+### Client detail
 
 #### `GET /api/clients/{id}`
 
-示例：
+Example:
 
 ```bash
 curl -H 'X-Admin-Token: change-me' \
   http://127.0.0.1:8080/api/clients/2130706433
 ```
 
-### 文件列表
+### File list
 
 #### `GET /api/files`
 
-支持参数：
+Query parameters:
 
-- `search`: 按文件名或 Hash 模糊过滤
-- `file_type`: 按文件类型过滤
-- `extension`: 按扩展名过滤
-- `page`: 页码，默认 `1`
-- `per_page`: 每页条数，默认 `50`，最大 `500`
-- `sort`: `name`、`size`、`sources`
+- `search`: filter by file name or hash (substring)
+- `file_type`: filter by file type
+- `extension`: filter by extension
+- `page`: page number (default `1`)
+- `per_page`: page size (default `50`, max `500`)
+- `sort`: `name`, `size`, `sources`
 
-示例：
+Example:
 
 ```bash
 curl -H 'X-Admin-Token: change-me' \
   'http://127.0.0.1:8080/api/files?search=ubuntu&file_type=Iso&sort=size&page=1&per_page=10'
 ```
 
-### 文件详情
+### File detail
 
 #### `GET /api/files/{hash}`
 
-示例：
+Example:
 
 ```bash
 curl -H 'X-Admin-Token: change-me' \
   http://127.0.0.1:8080/api/files/31D6CFE0D16AE931B73C59D7E0C089C0
 ```
 
-### 新增或更新文件
+### Create or update file
 
 #### `POST /api/files`
 
-示例：
+Example:
 
 ```bash
 curl -X POST \
@@ -410,11 +412,11 @@ curl -X POST \
   }'
 ```
 
-### 删除文件
+### Delete file
 
 #### `DELETE /api/files/{hash}`
 
-示例：
+Example:
 
 ```bash
 curl -X DELETE \
@@ -422,11 +424,11 @@ curl -X DELETE \
   http://127.0.0.1:8080/api/files/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 ```
 
-### 手动持久化目录
+### Persist catalog manually
 
 #### `POST /api/persist`
 
-示例：
+Example:
 
 ```bash
 curl -X POST \
@@ -434,44 +436,40 @@ curl -X POST \
   http://127.0.0.1:8080/api/persist
 ```
 
-## 测试
+## Tests
 
-运行全部测试：
+Run all tests:
 
 ```bash
 go test ./...
 ```
 
-当前测试覆盖：
+Coverage includes:
 
-- 搜索请求解码
-- ED2K 握手
-- 共享文件注册 `OP_OFFERFILES`
-- 搜索与翻页
-- 来源查询
-- 管理接口鉴权
-- 健康检查
-- 客户端详情/列表
-- 文件详情/列表/增删
-- 目录持久化
-- 统计接口
+- Search request decoding
+- ED2K handshake
+- Shared file registration `OP_OFFERFILES`
+- Search and pagination
+- Source queries
+- Admin API authentication
+- Health checks
+- Client detail/list
+- File detail/list/create/delete
+- Catalog persistence
+- Statistics API
 
-## 当前限制
+## Current limitations
 
-当前实现仍然有明确边界：
+- The reference `goed2k` client does not yet ship `OP_OFFERFILES` send logic; the server supports it, but the client still needs sending implemented
+- The dynamic share index is in-memory only and is not restored across restarts
+- Advanced publish flows (incremental updates, finer-grained publish state) are not implemented
+- No user authentication, RBAC, or audit log persistence
+- No Web UI
+- No database storage; the static catalog is currently persisted as JSON files only
 
-- 参考客户端 `goed2k` 当前仓库里还没有现成的 `OP_OFFERFILES` 发送实现，服务端已支持，但客户端侧仍需补发送逻辑
-- 动态共享索引目前是内存态，不做跨重启恢复
-- 没有实现完整的服务端共享发布协议流中的高级特性，例如增量更新和更细粒度的发布状态同步
-- 没有实现用户身份认证、权限分级、审计日志落盘
-- 没有实现 Web UI
-- 没有实现数据库存储，静态目录当前为 JSON 文件持久化
+## Suggested next steps
 
-## 后续建议
-
-建议下一步优先做下面几项之一：
-
-1. 在 `goed2k` 客户端里补 `OP_OFFERFILES` 发送逻辑
-2. 增加 OpenAPI 文档和 Swagger UI
-3. 增加 RBAC 和审计日志
-4. 把静态共享目录从 JSON 切到 SQLite/PostgreSQL
+1. Add `OP_OFFERFILES` send logic in the `goed2k` client
+2. Add OpenAPI docs and Swagger UI
+3. Add RBAC and audit logging
+4. Migrate static catalog from JSON to SQLite/PostgreSQL where appropriate
