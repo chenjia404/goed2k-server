@@ -172,6 +172,45 @@ go run ./cmd/goed2k-server -config config.json
 - ED2K TCP 服务: `:4661`
 - HTTP 管理接口: `:8080`
 
+## Docker 运行
+
+线上使用的 Docker 镜像为 Docker Hub 上的 [`chenjia404/goed2k-server`](https://hub.docker.com/r/chenjia404/goed2k-server)。
+
+拉取镜像：
+
+```bash
+docker pull chenjia404/goed2k-server:latest
+```
+
+容器默认执行 `/app/goed2k-server`，参数为 `-config /app/config.json`（与本仓库根目录 [`Dockerfile`](Dockerfile) 一致）。将主机上的 `config.json` 挂载到 `/app/config.json`，并映射端口即可运行：
+
+```bash
+docker run -d --name goed2k-server \
+  -p 4661:4661 -p 8080:8080 \
+  -v /path/to/config.json:/app/config.json:ro \
+  chenjia404/goed2k-server:latest
+```
+
+当 `storage_backend` 为 `json` 时，`catalog_path` 必须指向容器内真实存在的文件，一般通过挂载静态目录或单个 catalog 文件实现，并让配置里的路径与挂载路径一致。示例：主机目录 `/srv/goed2k/`，配置中 `catalog_path` 设为 `/data/catalog.json`：
+
+```bash
+docker run -d --name goed2k-server \
+  -p 4661:4661 -p 8080:8080 \
+  -v /srv/goed2k/config.json:/app/config.json:ro \
+  -v /srv/goed2k/catalog.json:/data/catalog.json:ro \
+  chenjia404/goed2k-server:latest
+```
+
+如需使用其他配置文件路径，可在镜像名之后追加参数（会覆盖默认的 `-config /app/config.json`）：
+
+```bash
+docker run --rm -p 4661:4661 -p 8080:8080 \
+  -v /path/to/other.json:/other/config.json:ro \
+  chenjia404/goed2k-server:latest -config /other/config.json
+```
+
+也可从源码自行构建镜像，见仓库根目录的 `Dockerfile`。
+
 ## 配置项说明
 
 | 字段 | 说明 |

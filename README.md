@@ -174,6 +174,45 @@ Default listeners:
 - ED2K TCP: `:4661`
 - HTTP admin: `:8080`
 
+## Docker
+
+The image published for production is [`chenjia404/goed2k-server`](https://hub.docker.com/r/chenjia404/goed2k-server) on Docker Hub.
+
+Pull:
+
+```bash
+docker pull chenjia404/goed2k-server:latest
+```
+
+The container entrypoint runs `/app/goed2k-server` with default arguments `-config /app/config.json` (see the [`Dockerfile`](Dockerfile) in this repo). Map host ports and mount your `config.json` at `/app/config.json`:
+
+```bash
+docker run -d --name goed2k-server \
+  -p 4661:4661 -p 8080:8080 \
+  -v /path/to/config.json:/app/config.json:ro \
+  chenjia404/goed2k-server:latest
+```
+
+When `storage_backend` is `json`, ensure `catalog_path` refers to a file that exists inside the container—usually by mounting your catalog and pointing `catalog_path` at that path. Example: host files under `/srv/goed2k/`, with `catalog_path` set to `/data/catalog.json`:
+
+```bash
+docker run -d --name goed2k-server \
+  -p 4661:4661 -p 8080:8080 \
+  -v /srv/goed2k/config.json:/app/config.json:ro \
+  -v /srv/goed2k/catalog.json:/data/catalog.json:ro \
+  chenjia404/goed2k-server:latest
+```
+
+To use another config path, pass arguments after the image name (overriding the default `-config /app/config.json`):
+
+```bash
+docker run --rm -p 4661:4661 -p 8080:8080 \
+  -v /path/to/other.json:/other/config.json:ro \
+  chenjia404/goed2k-server:latest -config /other/config.json
+```
+
+To build and run from source instead of the Hub image, use the `Dockerfile` at the repository root.
+
 ## Configuration
 
 | Field | Description |
