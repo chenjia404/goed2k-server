@@ -12,7 +12,7 @@ const (
 	defaultAdminListenAddress = ":8080"
 	defaultServerName         = "goed2k-server"
 	defaultDescription        = "Minimal eD2k/eMule compatible server"
-	defaultBatchSize          = 200
+	defaultBatchSize          = 100000
 )
 
 // Config describes the runtime settings for the ED2K server.
