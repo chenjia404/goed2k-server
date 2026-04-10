@@ -2,6 +2,7 @@ package ed2ksrv
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -13,6 +14,8 @@ const (
 	defaultServerName         = "goed2k-server"
 	defaultDescription        = "Minimal eD2k/eMule compatible server"
 	defaultBatchSize          = 200
+	defaultCatalogPath        = "catalog.json"
+	defaultDatabaseTable      = "shared_files"
 )
 
 // Config describes the runtime settings for the ED2K server.
@@ -49,6 +52,8 @@ func DefaultConfig() Config {
 		ServerDescription:   defaultDescription,
 		Message:             "Welcome to goed2k-server",
 		StorageBackend:      storageBackendJSON,
+		CatalogPath:         defaultCatalogPath,
+		DatabaseTable:       defaultDatabaseTable,
 		SearchBatchSize:     defaultBatchSize,
 		ProtocolObfuscation: true,
 		ServerUDP:           true,
@@ -105,14 +110,21 @@ func (c Config) Normalize() (Config, error) {
 }
 
 // LoadConfig reads a JSON configuration file from disk.
-func LoadConfig(path string) (Config, error) {
+// 若 path 指向的文件不存在，则使用 DefaultConfig 并经 Normalize（与「仅含默认值的配置文件」等价）。
+// 第二个返回值为 true 表示因文件不存在而采用了内置默认配置。
+func LoadConfig(path string) (Config, bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return Config{}, err
+		if errors.Is(err, os.ErrNotExist) {
+			cfg, err := DefaultConfig().Normalize()
+			return cfg, true, err
+		}
+		return Config{}, false, err
 	}
 	cfg := DefaultConfig()
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, err
+		return Config{}, false, err
 	}
-	return cfg.Normalize()
+	cfg, err = cfg.Normalize()
+	return cfg, false, err
 }

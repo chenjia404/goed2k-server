@@ -16,10 +16,13 @@ func main() {
 	configPath := flag.String("config", "config.json", "Path to the server JSON config file")
 	flag.Parse()
 
-	cfg, err := ed2ksrv.LoadConfig(*configPath)
+	cfg, usedDefaults, err := ed2ksrv.LoadConfig(*configPath)
 	if err != nil {
 		slog.Error("load config failed", "path", *configPath, "err", err)
 		os.Exit(1)
+	}
+	if usedDefaults {
+		slog.Info("config file not found, using built-in defaults", "path", *configPath)
 	}
 
 	server, err := ed2ksrv.NewServer(cfg, nil, slog.Default())
