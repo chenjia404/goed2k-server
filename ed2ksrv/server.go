@@ -443,9 +443,15 @@ func (s *Server) dispatch(client *clientSession, packet byte, body []byte) error
 	case opSearchRequest:
 		query, err := ParseSearchRequest(body)
 		if err != nil {
-			return err
+			s.logger.Warn("search parse failed, returning empty results", "err", err, "remote", client.conn.RemoteAddr().String())
+			return s.handleEmptySearch(client)
 		}
 		return s.handleSearch(client, query)
+	case opSearchUser:
+		if _, err := ParseSearchRequest(body); err != nil {
+			s.logger.Debug("user search parse ignored", "err", err, "remote", client.conn.RemoteAddr().String())
+		}
+		return s.handleEmptySearch(client)
 	case opSearchMore:
 		return s.handleSearchMore(client)
 	case opGetSources:
@@ -496,11 +502,11 @@ func (s *Server) handleLogin(client *clientSession, req serverproto.LoginRequest
 		}
 	}
 	ic := idChangeExtended{
-		ClientID:             assignedID,
-		TCPFlags:             s.cfg.TCPFlags,
-		AuxPort:              s.cfg.AuxPort,
-		ReportedIP:           reportedIPForIdChange(assignedID),
-		ObfuscationTCPPort:   obfuscationTCPPortAdvertised(s.cfg, s.serverTCPPort()),
+		ClientID:           assignedID,
+		TCPFlags:           s.cfg.TCPFlags,
+		AuxPort:            s.cfg.AuxPort,
+		ReportedIP:         reportedIPForIdChange(assignedID, remoteIPFromAddr(client.remote), s.cfg.reportedPublicIP),
+		ObfuscationTCPPort: obfuscationTCPPortAdvertised(s.cfg, s.serverTCPPort()),
 	}
 	return client.send("server.IdChange", &ic)
 }
@@ -551,6 +557,14 @@ func (s *Server) handleSearch(client *clientSession, query SearchQuery) error {
 	})
 	client.mu.Lock()
 	client.searchResult = results
+	client.searchOffset = 0
+	client.mu.Unlock()
+	return s.handleSearchMore(client)
+}
+
+func (s *Server) handleEmptySearch(client *clientSession) error {
+	client.mu.Lock()
+	client.searchResult = nil
 	client.searchOffset = 0
 	client.mu.Unlock()
 	return s.handleSearchMore(client)
@@ -1049,4 +1063,8 @@ func clientIDFromRemote(addr *net.TCPAddr) int32 {
 		return 0
 	}
 	return protocol.EndpointFromInet(addr).IP()
+}
+
+func remoteIPFromAddr(addr *net.TCPAddr) uint32 {
+	return uint32(clientIDFromRemote(addr))
 }

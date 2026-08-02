@@ -41,6 +41,11 @@ type Config struct {
 	SoftFilesLimit     int32  `json:"soft_files_limit"`
 	HardFilesLimit     int32  `json:"hard_files_limit"`
 	MaxUsersAdvertised uint32 `json:"max_users_advertised"`
+	// ReportedPublicIP 为低 ID 客户端在 IdChange 中回填的公网 IPv4（如 203.0.113.10）。
+	// 留空时若连接来源 IP 为公网地址则自动使用，否则返回 0。
+	ReportedPublicIP string `json:"reported_public_ip"`
+
+	reportedPublicIP uint32
 }
 
 // DefaultConfig returns a working baseline configuration.
@@ -106,6 +111,11 @@ func (c Config) Normalize() (Config, error) {
 	default:
 		return Config{}, fmt.Errorf("unsupported storage_backend: %s", c.StorageBackend)
 	}
+	ip, err := parseReportedPublicIP(c.ReportedPublicIP)
+	if err != nil {
+		return Config{}, err
+	}
+	c.reportedPublicIP = ip
 	return c, nil
 }
 

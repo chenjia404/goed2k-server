@@ -338,8 +338,25 @@ func matchesRecord(record FileRecord, query SearchQuery) bool {
 	if query.MinCompleteSources > 0 && record.CompleteSources < query.MinCompleteSources {
 		return false
 	}
+	for _, keyword := range query.ExcludedKeywords {
+		if strings.Contains(name, strings.ToLower(keyword)) {
+			return false
+		}
+	}
 	for _, keyword := range query.Keywords {
 		if !strings.Contains(name, strings.ToLower(keyword)) {
+			return false
+		}
+	}
+	if len(query.KeywordAlternatives) > 0 {
+		matched := false
+		for _, keyword := range query.KeywordAlternatives {
+			if strings.Contains(name, strings.ToLower(keyword)) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return false
 		}
 	}
