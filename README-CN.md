@@ -2,47 +2,66 @@
 
 `github.com/chenjia404/goed2k-server` 是一个用 Go 实现的 ED2K/eMule Server，面向 `github.com/monkeyWie/goed2k` 客户端协议做兼容实现。
 
-当前版本重点提供两部分能力：
+当前版本重点提供三部分能力：
 
-- ED2K/eMule TCP Server 协议服务
-- HTTP 管理接口
+- ED2K/eMule TCP/UDP Server 协议服务
+- HTTP 管理接口与嵌入式 Web 管理界面
+- 静态共享目录持久化（JSON / MySQL / PostgreSQL）
 
 项目目标不是复刻完整的 eMule 官方服务端，而是提供一个可运行、可测试、可扩展的服务端基础实现，便于你继续扩展协议能力和业务逻辑。
 
 ## 功能特性
 
-### 已实现的 ED2K 协议能力
+### 已实现的 ED2K TCP 协议能力
 
 - 客户端登录握手 `LoginRequest`
 - 服务端状态返回 `Status`
 - 服务端消息 `Message`
-- 客户端 ID 分配 `IdChange`
+- 客户端 ID 分配 `IdChange`（含 eMule 扩展字段：ReportedIP、混淆端口）
 - 共享文件注册 `OP_OFFERFILES`
-- 搜索请求 `SearchRequest`
+- 搜索请求 `SearchRequest`（兼容 eMule 递归布尔树与 goed2k 扁平编码）
+- 用户搜索 `OP_SEARCH_USER`（返回空用户列表）
 - 搜索翻页 `SearchMore`
-- 文件来源查询 `GetFileSources`
-- 回调请求 `CallbackRequest`
+- 文件来源查询 `GetFileSources` / `OP_GETSOURCES_OBFU`
+- 回调请求 `CallbackRequest`（TCP `0x1C`）
 - 回调通知 `CallbackRequestIncoming`
 - 回调失败 `CallbackRequestFailed`
+- TCP 协议混淆（DH + RC4）
+
+### 已实现的 ED2K UDP 协议能力
+
+启用 `server_udp` 后，服务端在 **TCP 端口 + `udp_port_offset`**（默认 +4）监听 UDP，并支持：
+
+| 操作码 | 说明 |
+| --- | --- |
+| `0x96` | 全局服务状态 `OP_GLOBSERVSTATREQ` / `OP_GLOBSERVSTATRES` |
+| `0x98` | 全局文件搜索 `OP_GLOBSEARCHREQ`，逐条返回 `0x99` 结果 |
+| `0x9A` | 文件来源查询 `OP_GLOBGETSOURCES`，应答 `0x9B` |
+| `0x9C` | 回调转发 `OP_GLOBCALLBACKREQ` → 向目标客户端发送 TCP `0x35` |
+| `0x9E` | 回调失败 `OP_INVALID_LOWID`（目标不在线时） |
+| `0xA2` | 服务器信息查询，应答 `0xA3` |
+| `0xA4` | 服务器列表查询，应答 `0xA1`（当前返回空列表） |
 
 ### 已实现的运行时能力
 
-- eMule 兼容的 **UDP 服务状态**（`OP_GLOBSERVSTATREQ` / `OP_GLOBSERVSTATRES`，用于客户端刷新软性/硬性文件限制等）
-- 动态用户表
-- 运行时统计
-- 动态共享文件注册、更新、断链撤销
+- 动态用户表与运行时统计
+- 动态共享文件注册、更新、断链撤销（内存索引，参与搜索与来源查询）
 - 静态共享目录持久化到 JSON、MySQL 或 PostgreSQL
-- HTTP 管理接口
+- HTTP 管理 API（文件/客户端 CRUD、批量删除、审计日志、统计）
+- 嵌入式 Web 管理界面（中英文，路径 `/`）
 - 管理接口 Token 鉴权
 - 列表分页、过滤、排序
+- 低 ID 客户端 `ReportedIP` 回填（`reported_public_ip` 配置或自动检测公网来源）
 - 健康检查
 
 ## 项目结构
 
 - [cmd/goed2k-server/main.go](goed2k-server/cmd/goed2k-server/main.go): 启动入口
 - [ed2ksrv/server.go](goed2k-server/ed2ksrv/server.go): TCP 服务、动态用户表、统计
-- [ed2ksrv/server_udp.go](goed2k-server/ed2ksrv/server_udp.go): ED2K UDP 服务状态应答
-- [ed2ksrv/admin.go](goed2k-server/ed2ksrv/admin.go): HTTP 管理接口
+- [ed2ksrv/server_udp.go](ed2ksrv/server_udp.go): ED2K UDP 协议应答（状态、搜索、来源、回调等）
+- [ed2ksrv/server_udp_callback.go](ed2ksrv/server_udp_callback.go): UDP 回调转发 `OP_GLOBCALLBACKREQ`
+- [ed2ksrv/admin.go](ed2ksrv/admin.go): HTTP 管理接口
+- [ed2ksrv/admin_ui.go](ed2ksrv/admin_ui.go): 嵌入式 Web 管理界面
 - [ed2ksrv/catalog.go](goed2k-server/ed2ksrv/catalog.go): 共享文件目录和持久化
 - [ed2ksrv/offerfiles.go](goed2k-server/ed2ksrv/offerfiles.go): `OP_OFFERFILES` 协议处理
 - [ed2ksrv/protocol.go](goed2k-server/ed2ksrv/protocol.go): 搜索请求解析
@@ -255,6 +274,17 @@ docker run --rm -p 4661:4661 -p 4665:4665/udp -p 8080:8080 \
 | `soft_files_limit` | 在 UDP 应答中通告的软性文件限制（供 eMule 显示与发布策略） |
 | `hard_files_limit` | 在 UDP 应答中通告的硬性文件限制 |
 | `max_users_advertised` | 在 UDP 应答中通告的最大用户数 |
+| `reported_public_ip` | 低 ID 客户端在 `IdChange` 中回填的公网 IPv4；留空时对公网来源自动检测 |
+
+### UDP 回调说明
+
+高 ID 客户端可通过 **UDP `OP_GLOBCALLBACKREQ (0x9C)`** 请求低 ID 客户端回连，无需保持 TCP 连接发送 `0x1C`。
+
+标准载荷（10 字节）：`<请求方 IP 4><请求方 TCP 端口 2><目标 client_ID 4>`
+
+兼容旧版 4 字节载荷（仅 `client_ID`）：请求方须已建立 TCP 登录，且 UDP 来源 IP 与 TCP 会话一致。
+
+转发成功时服务端向目标客户端发送 TCP `CallbackRequestIncoming (0x35)`；目标不在线时 UDP 回复 `0x9E`。
 
 ### 数据库存储示例
 
@@ -510,34 +540,30 @@ go test ./...
 
 当前测试覆盖：
 
-- 搜索请求解码
-- ED2K 握手
+- 搜索请求解码（含 eMule 递归树与 goed2k 扁平编码）
+- ED2K 握手与 `IdChange` 扩展字段
 - 共享文件注册 `OP_OFFERFILES`
-- 搜索与翻页
-- 来源查询
-- 管理接口鉴权
-- 健康检查
-- 客户端详情/列表
-- 文件详情/列表/增删
-- 目录持久化
-- 统计接口
+- 搜索与翻页、用户搜索 `OP_SEARCH_USER`
+- 来源查询（含混淆应答）
+- TCP/UDP 回调转发
+- UDP 全局搜索、来源查询、服务状态
+- 管理接口鉴权、Web UI
+- 健康检查、客户端/文件 CRUD、目录持久化、统计接口
 
 ## 当前限制
 
-当前实现仍然有明确边界：
-
-- 参考客户端 `goed2k` 当前仓库里还没有现成的 `OP_OFFERFILES` 发送实现，服务端已支持，但客户端侧仍需补发送逻辑
-- 动态共享索引目前是内存态，不做跨重启恢复
-- 没有实现完整的服务端共享发布协议流中的高级特性，例如增量更新和更细粒度的发布状态同步
-- 没有实现用户身份认证、权限分级、审计日志落盘
-- 没有实现 Web UI
-- 没有实现数据库存储，静态目录当前为 JSON 文件持久化
+- 参考客户端 `goed2k` 尚未实现 `OP_OFFERFILES` 发送逻辑，端到端动态共享需客户端侧补齐
+- 动态共享索引仅内存态，重启不恢复；Admin API 只能管理静态目录
+- 未实现完整 eMule 发布协议高级特性（增量更新、细粒度发布状态）
+- 同一公网 IP 下多个 TCP 客户端会共享高 ID（按来源 IP 分配），后登录者覆盖先前者会话表项
+- 仅单一 `admin_token` 鉴权，无 RBAC；审计日志仅内存保留最近 200 条
+- 无 OpenAPI/Swagger 文档
+- 非完整 eMule 服务器：大量 TCP/UDP 操作码未实现
 
 ## 后续建议
 
-建议下一步优先做下面几项之一：
-
-1. 在 `goed2k` 客户端里补 `OP_OFFERFILES` 发送逻辑
+1. 在 `goed2k` 客户端补 `OP_OFFERFILES` 发送逻辑
 2. 增加 OpenAPI 文档和 Swagger UI
-3. 增加 RBAC 和审计日志
-4. 把静态共享目录从 JSON 切到 SQLite/PostgreSQL
+3. 审计日志持久化与 RBAC
+4. 动态共享来源标注与按客户端撤销
+5. SQLite 轻量存储后端（可选）

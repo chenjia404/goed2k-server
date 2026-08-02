@@ -110,6 +110,8 @@ func (s *Server) serveUDP() {
 			s.replyUDPSearchFile(pc, addr, payload)
 		case opUDPGetSources:
 			s.replyUDPFoundSources(pc, addr, payload)
+		case opUDPCallbackReq:
+			s.replyUDPCallback(pc, addr, payload)
 		default:
 			s.logger.Debug("unsupported udp opcode", "opcode", buf[1], "remote", addr.String())
 		}

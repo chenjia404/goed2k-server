@@ -623,17 +623,21 @@ func (s *Server) handleCallback(client *clientSession, req serverproto.CallbackR
 	s.bumpCounter(func(stats *serverCounters) {
 		stats.CallbackRequests++
 	})
-	target := s.findClient(req.ClientID)
-	if target == nil {
-		return client.send("server.CallbackRequestFailed", &serverproto.CallbackRequestFailed{})
-	}
 	client.mu.Lock()
 	origin := protocol.NewEndpoint(client.assignedID, client.loginPoint.Port())
 	client.mu.Unlock()
-	if err := target.send("server.CallbackRequestIncoming", &serverproto.CallbackRequestIncoming{Point: origin}); err != nil {
+	if err := s.forwardCallback(req.ClientID, origin); err != nil {
 		return client.send("server.CallbackRequestFailed", &serverproto.CallbackRequestFailed{})
 	}
 	return nil
+}
+
+func (s *Server) forwardCallback(targetClientID int32, origin protocol.Endpoint) error {
+	target := s.findClient(targetClientID)
+	if target == nil {
+		return fmt.Errorf("target client %d not connected", targetClientID)
+	}
+	return target.send("server.CallbackRequestIncoming", &serverproto.CallbackRequestIncoming{Point: origin})
 }
 
 func (s *Server) registerClient(client *clientSession) {
@@ -672,6 +676,28 @@ func (s *Server) findClient(clientID int32) *clientSession {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.clients[clientID]
+}
+
+func (s *Server) findClientByRemoteIP(ip net.IP) *clientSession {
+	if ip == nil {
+		return nil
+	}
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, client := range s.clients {
+		if client.remote == nil || client.remote.IP == nil {
+			continue
+		}
+		remote4 := client.remote.IP.To4()
+		if remote4 != nil && remote4.Equal(ip4) {
+			return client
+		}
+	}
+	return nil
 }
 
 func (s *Server) clientCount() int {

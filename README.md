@@ -4,47 +4,62 @@
 
 `github.com/chenjia404/goed2k-server` is an ED2K/eMule server implemented in Go, compatible with the `github.com/monkeyWie/goed2k` client protocol.
 
-The current release focuses on two areas:
+The current release focuses on three areas:
 
-- ED2K/eMule TCP server protocol
-- HTTP administration API
+- ED2K/eMule TCP and UDP server protocol
+- HTTP admin API with an embedded Web UI
+- Static shared catalog persistence (JSON / MySQL / PostgreSQL)
 
 The goal is not to replicate the full official eMule server, but to provide a runnable, testable, extensible server foundation so you can extend protocol behavior and business logic.
 
 ## Features
 
-### ED2K protocol (implemented)
+### ED2K TCP protocol (implemented)
 
 - Client login handshake `LoginRequest`
-- Server status `Status`
-- Server message `Message`
-- Client ID assignment `IdChange`
+- Server status `Status` and message `Message`
+- Client ID assignment `IdChange` (eMule extended fields: ReportedIP, obfuscation port)
 - Shared file registration `OP_OFFERFILES`
-- Search `SearchRequest`
+- Search `SearchRequest` (eMule recursive boolean tree and goed2k flat encoding)
+- User search `OP_SEARCH_USER` (empty user list reply)
 - Search pagination `SearchMore`
-- File source lookup `GetFileSources`
-- Callback request `CallbackRequest`
-- Callback notification `CallbackRequestIncoming`
-- Callback failure `CallbackRequestFailed`
+- File source lookup `GetFileSources` / `OP_GETSOURCES_OBFU`
+- Callback request `CallbackRequest` (TCP `0x1C`)
+- Callback notification `CallbackRequestIncoming` and failure `CallbackRequestFailed`
+- TCP protocol obfuscation (DH + RC4)
+
+### ED2K UDP protocol (implemented)
+
+When `server_udp` is enabled, the server listens on **TCP port + `udp_port_offset`** (default +4) and supports:
+
+| Opcode | Description |
+| --- | --- |
+| `0x96` | Global server status `OP_GLOBSERVSTATREQ` / `OP_GLOBSERVSTATRES` |
+| `0x98` | Global file search `OP_GLOBSEARCHREQ`, replies with `0x99` per result |
+| `0x9A` | File source lookup `OP_GLOBGETSOURCES`, reply `0x9B` |
+| `0x9C` | Callback relay `OP_GLOBCALLBACKREQ` → TCP `0x35` to target client |
+| `0x9E` | Callback failure `OP_INVALID_LOWID` when target is offline |
+| `0xA2` | Server info request, reply `0xA3` |
+| `0xA4` | Server list request, reply `0xA1` (empty list today) |
 
 ### Runtime (implemented)
 
-- eMule-compatible **UDP server status** (`OP_GLOBSERVSTATREQ` / `OP_GLOBSERVSTATRES`, used to refresh soft/hard file limits and related fields in the client)
-- Dynamic user table
-- Runtime statistics
-- Dynamic shared file registration, updates, and revocation on disconnect
-- Static shared catalog persisted to JSON, MySQL, or PostgreSQL
-- HTTP admin API
-- Admin API token authentication
-- List pagination, filtering, and sorting
+- Dynamic user table and runtime statistics
+- Dynamic shared file index (in-memory; search and source lookup)
+- Static catalog persisted to JSON, MySQL, or PostgreSQL
+- HTTP admin API and embedded Web UI (Chinese/English at `/`)
+- Admin API token authentication, pagination, filtering, sorting
+- Low-ID `ReportedIP` fill (`reported_public_ip` or auto-detected public source IP)
 - Health checks
 
 ## Project layout
 
 - [cmd/goed2k-server/main.go](cmd/goed2k-server/main.go): entry point
 - [ed2ksrv/server.go](ed2ksrv/server.go): TCP server, dynamic user table, stats
-- [ed2ksrv/server_udp.go](ed2ksrv/server_udp.go): ED2K UDP server status replies
+- [ed2ksrv/server_udp.go](ed2ksrv/server_udp.go): ED2K UDP replies (status, search, sources, callback, …)
+- [ed2ksrv/server_udp_callback.go](ed2ksrv/server_udp_callback.go): UDP callback relay `OP_GLOBCALLBACKREQ`
 - [ed2ksrv/admin.go](ed2ksrv/admin.go): HTTP admin API
+- [ed2ksrv/admin_ui.go](ed2ksrv/admin_ui.go): embedded Web admin UI
 - [ed2ksrv/catalog.go](ed2ksrv/catalog.go): shared catalog and persistence
 - [ed2ksrv/offerfiles.go](ed2ksrv/offerfiles.go): `OP_OFFERFILES` handling
 - [ed2ksrv/protocol.go](ed2ksrv/protocol.go): search request parsing
@@ -257,6 +272,17 @@ To build and run from source instead of the Hub image, use the `Dockerfile` at t
 | `soft_files_limit` | Soft file limit advertised in the UDP reply (eMule display and publish policy) |
 | `hard_files_limit` | Hard file limit advertised in the UDP reply |
 | `max_users_advertised` | Max users advertised in the UDP reply |
+| `reported_public_ip` | Public IPv4 filled into `IdChange.ReportedIP` for low-ID clients; auto-detected from public source IP when empty |
+
+### UDP callback
+
+High-ID clients may request a low-ID peer to call back via **UDP `OP_GLOBCALLBACKREQ (0x9C)`** without sending TCP `0x1C`.
+
+Standard payload (10 bytes): `<requester IP 4><requester TCP port 2><target client_ID 4>`
+
+Legacy 4-byte payload (target `client_ID` only): requester must already be logged in over TCP from the same source IP as the UDP packet.
+
+On success the server sends TCP `CallbackRequestIncoming (0x35)` to the target; on failure UDP `0x9E` is returned.
 
 ### Database storage examples
 
@@ -512,30 +538,29 @@ go test ./...
 
 Coverage includes:
 
-- Search request decoding
-- ED2K handshake
+- Search request decoding (eMule recursive tree and goed2k flat encoding)
+- ED2K handshake and extended `IdChange`
 - Shared file registration `OP_OFFERFILES`
-- Search and pagination
-- Source queries
-- Admin API authentication
-- Health checks
-- Client detail/list
-- File detail/list/create/delete
-- Catalog persistence
-- Statistics API
+- Search, pagination, and user search `OP_SEARCH_USER`
+- Source lookup (including obfuscated replies)
+- TCP and UDP callback relay
+- UDP global search, source lookup, and server status
+- Admin API auth, Web UI, health checks, catalog persistence, statistics
 
 ## Current limitations
 
-- The reference `goed2k` client does not yet ship `OP_OFFERFILES` send logic; the server supports it, but the client still needs sending implemented
-- The dynamic share index is in-memory only and is not restored across restarts
-- Advanced publish flows (incremental updates, finer-grained publish state) are not implemented
-- No user authentication, RBAC, or audit log persistence
-- No Web UI
-- No database storage; the static catalog is currently persisted as JSON files only
+- The reference `goed2k` client does not yet send `OP_OFFERFILES`; end-to-end dynamic sharing needs client support
+- Dynamic share index is in-memory only; admin APIs manage the static catalog only
+- Advanced publish flows (incremental updates, fine-grained publish state) are not implemented
+- Multiple TCP clients behind the same public IP share one high client ID (assigned by source IP); later logins replace earlier sessions
+- Single `admin_token` only; no RBAC; audit log is in-memory (last 200 entries)
+- No OpenAPI/Swagger documentation
+- Not a full eMule server: many TCP/UDP opcodes are unimplemented
 
 ## Suggested next steps
 
 1. Add `OP_OFFERFILES` send logic in the `goed2k` client
 2. Add OpenAPI docs and Swagger UI
-3. Add RBAC and audit logging
-4. Migrate static catalog from JSON to SQLite/PostgreSQL where appropriate
+3. Persist audit logs and add RBAC
+4. Label dynamic vs static shares in admin APIs
+5. Optional SQLite storage backend
