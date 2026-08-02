@@ -18,5 +18,13 @@
   "soft_files_limit": 5000,
   "hard_files_limit": 200000,
   "max_users_advertised": 500000,
-  "reported_public_ip": ""
+  "reported_public_ip": "",
+  "public_http_enabled": true,
+  "public_http_listen_address": ":9090",
+  "public_http_token": "",
+  "public_announce_interval": 1800,
+  "public_min_announce_interval": 900,
+  "public_peer_timeout": 1800,
+  "public_max_peers_returned": 50,
+  "public_search_batch_size": 50
 }
