@@ -131,7 +131,7 @@ func (s *Server) buildGlobServStatRes(challenge uint32) []byte {
 }
 
 func (s *Server) buildUDPServerInfo(payload []byte) []byte {
-	useChallenge := len(payload) >= 2 && binary.LittleEndian.Uint16(payload[0:2]) == ed2kServerInfoChallenge
+	useChallenge := len(payload) >= 4 && binary.LittleEndian.Uint16(payload[0:2]) == ed2kServerInfoChallenge
 	var buf bytes.Buffer
 	buf.WriteByte(ed2kUDPHeader)
 	buf.WriteByte(opUDPServerInfo)
@@ -211,6 +211,9 @@ func encodeUDPSharedFileEntry(entry serverproto.SharedFileEntry) ([]byte, error)
 
 func writeED2KString(buf *bytes.Buffer, value string) {
 	raw := []byte(value)
+	if len(raw) > 0xffff {
+		raw = raw[:0xffff]
+	}
 	_ = protocol.WriteUInt16(buf, uint16(len(raw)))
 	_, _ = buf.Write(raw)
 }

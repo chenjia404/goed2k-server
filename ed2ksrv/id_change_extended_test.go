@@ -84,3 +84,16 @@ func TestConfigNormalizeReportedPublicIP(t *testing.T) {
 		t.Fatalf("unexpected normalized IP: 0x%08x", normalized.reportedPublicIP)
 	}
 }
+
+func TestParseReportedPublicIPRejectsPrivateAddress(t *testing.T) {
+	if _, err := parseReportedPublicIP("192.168.1.1"); err == nil {
+		t.Fatal("expected private reported_public_ip to be rejected")
+	}
+}
+
+func TestReportedIPSkipsLinkLocalRemoteIP(t *testing.T) {
+	got := reportedIPForIdChange(12345, 0x0101FEA9, 0)
+	if got != 0 {
+		t.Fatalf("expected link-local remote IP to be ignored, got 0x%08x", got)
+	}
+}

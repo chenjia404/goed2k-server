@@ -210,6 +210,86 @@ func TestServerHandshakeSearchAndSources(t *testing.T) {
 	}
 }
 
+func TestServerUserSearchReturnsEmptyClientList(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.CatalogPath = filepath.Join("..", "testdata", "catalog.json")
+	cfg.AdminListenAddress = ""
+
+	catalog, err := LoadCatalog(cfg.CatalogPath)
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	server, err := NewServer(cfg, catalog, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	go func() { _ = server.Serve(listener) }()
+	defer shutdownServer(t, server)
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	combiner := serverproto.NewPacketCombiner()
+	login := serverproto.NewLoginRequest(protocol.EMule, 4662, "test-client")
+	if err := writePacket(conn, combiner, "server.LoginRequest", &login); err != nil {
+		t.Fatalf("write login: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for login")
+		}
+		header, _, _, err := readFrame(conn)
+		if err != nil {
+			t.Fatalf("read login response: %v", err)
+		}
+		if header.Packet == 0x40 {
+			break
+		}
+	}
+
+	if err := writeRawOpcode(conn, opSearchUser, nil); err != nil {
+		t.Fatalf("write user search: %v", err)
+	}
+	header, body, _, err := readFrame(conn)
+	if err != nil {
+		t.Fatalf("read user search response: %v", err)
+	}
+	if header.Packet != opSearchUserResults {
+		t.Fatalf("expected opcode 0x43, got 0x%02x", header.Packet)
+	}
+	if len(body) != 4 || binary.LittleEndian.Uint32(body) != 0 {
+		t.Fatalf("expected empty client list, got body=% x", body)
+	}
+}
+
+func writeRawOpcode(conn net.Conn, opcode byte, body []byte) error {
+	header := protocol.PacketHeader{
+		Protocol: protocol.EdonkeyHeader,
+		Size:     int32(len(body) + 1),
+		Packet:   opcode,
+	}
+	var frame bytes.Buffer
+	if err := header.Put(&frame); err != nil {
+		return err
+	}
+	if _, err := frame.Write(body); err != nil {
+		return err
+	}
+	_, err := conn.Write(frame.Bytes())
+	return err
+}
+
 func TestOfferFilesRegistersDynamicSharedEntries(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.CatalogPath = filepath.Join("..", "testdata", "catalog.json")

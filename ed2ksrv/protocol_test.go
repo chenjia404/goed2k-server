@@ -154,3 +154,33 @@ func TestParseSearchRequestStillMatchesGoed2K(t *testing.T) {
 		t.Fatalf("unexpected keywords: %#v", parsed.Keywords)
 	}
 }
+
+func TestParseSearchRequestTreeNumericEqualSize(t *testing.T) {
+	var body bytes.Buffer
+	_ = body.WriteByte(searchTypeLimit)
+	_ = protocol.WriteUInt32(&body, 2048)
+	_ = body.WriteByte(searchOpEqual)
+	_ = protocol.WriteUInt16(&body, 1)
+	_ = body.WriteByte(protocol.FTFileSize)
+
+	parsed, err := ParseSearchRequest(body.Bytes())
+	if err != nil {
+		t.Fatalf("parse tree numeric equal: %v", err)
+	}
+	if parsed.MinSize != 2048 || parsed.MaxSize != 2048 {
+		t.Fatalf("unexpected size filters: %#v", parsed)
+	}
+}
+
+func TestMergeAndSearchQueriesDoesNotAliasLeft(t *testing.T) {
+	left := SearchQuery{Keywords: []string{"a"}}
+	right := SearchQuery{Keywords: []string{"b"}}
+	merged := mergeAndSearchQueries(left, right)
+	_ = mergeAndSearchQueries(left, SearchQuery{Keywords: []string{"c"}})
+	if len(left.Keywords) != 1 || left.Keywords[0] != "a" {
+		t.Fatalf("merge mutated left: %#v", left.Keywords)
+	}
+	if len(merged.Keywords) != 2 {
+		t.Fatalf("unexpected merged keywords: %#v", merged.Keywords)
+	}
+}
