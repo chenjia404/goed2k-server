@@ -13,6 +13,7 @@ const (
 	opGetServerList    byte = 0x14
 	opSearchRequest    byte = 0x16
 	opSearchUser       byte = 0x1A
+	opSearchUserResults byte = 0x43
 	opGetSources       byte = 0x19
 	opGetSourcesObfu   byte = 0x23
 	opCallbackReq      byte = 0x1C
@@ -53,8 +54,15 @@ func ParseSearchRequest(body []byte) (SearchQuery, error) {
 		return SearchQuery{}, nil
 	}
 	if body[0] == searchTypeBool {
-		query, err := parseSearchTree(bytes.NewReader(body))
-		if err == nil {
+		if query, err := parseSearchTree(bytes.NewReader(body)); err == nil {
+			return query, nil
+		}
+	}
+	if query, err := parseSearchFlat(bytes.NewReader(body)); err == nil {
+		return query, nil
+	}
+	if body[0] != searchTypeBool {
+		if query, err := parseSearchTree(bytes.NewReader(body)); err == nil {
 			return query, nil
 		}
 	}
@@ -84,19 +92,7 @@ func parseSearchFlat(reader *bytes.Reader) (SearchQuery, error) {
 				return SearchQuery{}, err
 			}
 		case searchTypeLimit:
-			value, err := protocol.ReadUInt32(reader)
-			if err != nil {
-				return SearchQuery{}, err
-			}
-			operator, err := reader.ReadByte()
-			if err != nil {
-				return SearchQuery{}, err
-			}
-			tagID, err := readSearchTagID(reader)
-			if err != nil {
-				return SearchQuery{}, err
-			}
-			if err := applyNumericTag(&query, tagID, operator, uint64(value)); err != nil {
+			if err := consumeSearchNumeric(reader, &query); err != nil {
 				return SearchQuery{}, err
 			}
 		case searchTypeUint64:
@@ -150,7 +146,7 @@ func parseSearchTree(reader *bytes.Reader) (SearchQuery, error) {
 		return query, nil
 	case searchTypeLimit:
 		query := SearchQuery{}
-		if err := consumeSearchLimit(reader, &query); err != nil {
+		if err := consumeSearchNumeric(reader, &query); err != nil {
 			return SearchQuery{}, err
 		}
 		return query, nil
@@ -185,7 +181,17 @@ func mergeSearchQueries(left, right SearchQuery, operator byte) SearchQuery {
 }
 
 func mergeAndSearchQueries(left, right SearchQuery) SearchQuery {
-	out := left
+	out := SearchQuery{
+		Keywords:            append([]string(nil), left.Keywords...),
+		KeywordAlternatives: append([]string(nil), left.KeywordAlternatives...),
+		ExcludedKeywords:    append([]string(nil), left.ExcludedKeywords...),
+		MinSize:             left.MinSize,
+		MaxSize:             left.MaxSize,
+		MinSources:          left.MinSources,
+		MinCompleteSources:  left.MinCompleteSources,
+		FileType:            left.FileType,
+		Extension:           left.Extension,
+	}
 	out.Keywords = appendUniqueStrings(out.Keywords, right.Keywords...)
 	out.KeywordAlternatives = appendUniqueStrings(out.KeywordAlternatives, right.KeywordAlternatives...)
 	out.ExcludedKeywords = appendUniqueStrings(out.ExcludedKeywords, right.ExcludedKeywords...)
@@ -237,21 +243,12 @@ func appendKeyword(query *SearchQuery, value string) {
 	}
 }
 
-func consumeSearchStringTag(reader *bytes.Reader, query *SearchQuery) error {
-	value, tagID, err := readSearchStringTag(reader)
-	if err != nil {
-		return err
-	}
-	applyStringSearchTag(query, tagID, value)
-	return nil
-}
-
-func consumeSearchLimit(reader *bytes.Reader, query *SearchQuery) error {
+func consumeSearchNumeric(reader *bytes.Reader, query *SearchQuery) error {
 	value, err := protocol.ReadUInt32(reader)
 	if err != nil {
 		return err
 	}
-	limitType, err := reader.ReadByte()
+	operator, err := reader.ReadByte()
 	if err != nil {
 		return err
 	}
@@ -259,16 +256,22 @@ func consumeSearchLimit(reader *bytes.Reader, query *SearchQuery) error {
 	if err != nil {
 		return err
 	}
-	operator := searchOpGreater
-	switch limitType {
+	switch operator {
 	case searchLimitMin:
 		operator = searchOpGreater
 	case searchLimitMax:
 		operator = searchOpLess
-	default:
-		return nil
 	}
 	return applyNumericTag(query, tagID, operator, uint64(value))
+}
+
+func consumeSearchStringTag(reader *bytes.Reader, query *SearchQuery) error {
+	value, tagID, err := readSearchStringTag(reader)
+	if err != nil {
+		return err
+	}
+	applyStringSearchTag(query, tagID, value)
+	return nil
 }
 
 func applyStringSearchTag(query *SearchQuery, tagID byte, value string) {

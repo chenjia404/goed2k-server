@@ -99,6 +99,9 @@ func isPrivateOrLoopbackIP(ip uint32) bool {
 	if b0 == 127 {
 		return true
 	}
+	if b0 == 169 && b1 == 254 {
+		return true
+	}
 	return false
 }
 
@@ -115,7 +118,11 @@ func parseReportedPublicIP(value string) (uint32, error) {
 	if ip4 == nil {
 		return 0, fmt.Errorf("reported_public_ip must be IPv4: %q", value)
 	}
-	return uint32(ip4[0]) | uint32(ip4[1])<<8 | uint32(ip4[2])<<16 | uint32(ip4[3])<<24, nil
+	packed := uint32(ip4[0]) | uint32(ip4[1])<<8 | uint32(ip4[2])<<16 | uint32(ip4[3])<<24
+	if isPrivateOrLoopbackIP(packed) {
+		return 0, fmt.Errorf("reported_public_ip must be a public IPv4 address: %q", value)
+	}
+	return packed, nil
 }
 
 func reportedIPForIdChange(assignedID int32, remoteIP uint32, configuredIP uint32) uint32 {

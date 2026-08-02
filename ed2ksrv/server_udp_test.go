@@ -200,10 +200,16 @@ func mustHash(t *testing.T, value string) protocol.Hash {
 }
 
 func TestGlobServStatChallengeEcho(t *testing.T) {
-	payload := make([]byte, 4)
-	binary.LittleEndian.PutUint32(payload, 0xAABBCCDD)
 	resp := (&Server{cfg: DefaultConfig()}).buildGlobServStatRes(0xAABBCCDD)
 	if binary.LittleEndian.Uint32(resp[2:6]) != 0xAABBCCDD {
 		t.Fatalf("challenge not echoed")
+	}
+}
+
+func TestBuildUDPServerInfoShortChallengePayload(t *testing.T) {
+	s := &Server{cfg: DefaultConfig()}
+	resp := s.buildUDPServerInfo([]byte{0xf0, 0xff})
+	if len(resp) < 4 || resp[0] != ed2kUDPHeader || resp[1] != opUDPServerInfo {
+		t.Fatalf("unexpected response for short challenge payload: % x", resp)
 	}
 }

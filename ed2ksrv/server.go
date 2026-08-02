@@ -451,7 +451,7 @@ func (s *Server) dispatch(client *clientSession, packet byte, body []byte) error
 		if _, err := ParseSearchRequest(body); err != nil {
 			s.logger.Debug("user search parse ignored", "err", err, "remote", client.conn.RemoteAddr().String())
 		}
-		return s.handleEmptySearch(client)
+		return s.handleEmptyUserSearch(client)
 	case opSearchMore:
 		return s.handleSearchMore(client)
 	case opGetSources:
@@ -568,6 +568,14 @@ func (s *Server) handleEmptySearch(client *clientSession) error {
 	client.searchOffset = 0
 	client.mu.Unlock()
 	return s.handleSearchMore(client)
+}
+
+func (s *Server) handleEmptyUserSearch(client *clientSession) error {
+	var body bytes.Buffer
+	if err := protocol.WriteUInt32(&body, 0); err != nil {
+		return err
+	}
+	return client.sendRawEd2k(opSearchUserResults, body.Bytes())
 }
 
 func (s *Server) handleSearchMore(client *clientSession) error {
