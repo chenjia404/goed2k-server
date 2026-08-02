@@ -2,6 +2,9 @@ package ed2ksrv
 
 import (
 	"bytes"
+	"fmt"
+	"net"
+	"strings"
 
 	"github.com/monkeyWie/goed2k/protocol"
 )
@@ -74,13 +77,58 @@ func (i idChangeExtended) Put(dst *bytes.Buffer) error {
 
 func (i idChangeExtended) BytesCount() int { return idChangeExtendedSize }
 
-func reportedIPForIdChange(assignedID int32) uint32 {
-	u := uint32(assignedID)
-	// eMule: ASSERT(dwServerReportedIP == new_id || IsLowID(new_id))；低 ID 时可用服务器观测到的公网 IP。
-	if u < 0x01000000 {
-		return 0
+func isLowClientID(assignedID int32) bool {
+	return uint32(assignedID) < 0x01000000
+}
+
+func isPrivateOrLoopbackIP(ip uint32) bool {
+	if ip == 0 {
+		return true
 	}
-	return u
+	b0 := byte(ip)
+	b1 := byte(ip >> 8)
+	if b0 == 10 {
+		return true
+	}
+	if b0 == 172 && b1 >= 16 && b1 <= 31 {
+		return true
+	}
+	if b0 == 192 && b1 == 168 {
+		return true
+	}
+	if b0 == 127 {
+		return true
+	}
+	return false
+}
+
+func parseReportedPublicIP(value string) (uint32, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	ip := net.ParseIP(value)
+	if ip == nil {
+		return 0, fmt.Errorf("invalid reported_public_ip: %q", value)
+	}
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return 0, fmt.Errorf("reported_public_ip must be IPv4: %q", value)
+	}
+	return uint32(ip4[0]) | uint32(ip4[1])<<8 | uint32(ip4[2])<<16 | uint32(ip4[3])<<24, nil
+}
+
+func reportedIPForIdChange(assignedID int32, remoteIP uint32, configuredIP uint32) uint32 {
+	if !isLowClientID(assignedID) {
+		return uint32(assignedID)
+	}
+	if configuredIP != 0 {
+		return configuredIP
+	}
+	if !isPrivateOrLoopbackIP(remoteIP) {
+		return remoteIP
+	}
+	return 0
 }
 
 func obfuscationTCPPortAdvertised(cfg Config, listenerPort uint16) uint32 {

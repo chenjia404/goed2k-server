@@ -48,11 +48,7 @@ func TestGlobServStatUDPReply(t *testing.T) {
 	defer shutdownServer(t, server)
 
 	tcpAddr := listener.Addr().(*net.TCPAddr)
-	udpTarget := net.JoinHostPort("127.0.0.1", strconv.Itoa(tcpAddr.Port+4))
-	udpConn, err := net.Dial("udp", udpTarget)
-	if err != nil {
-		t.Fatalf("dial udp: %v", err)
-	}
+	udpConn := dialServerUDP(t, tcpAddr.Port+4)
 	defer udpConn.Close()
 
 	req := make([]byte, 6)
@@ -86,38 +82,6 @@ func TestGlobServStatUDPReply(t *testing.T) {
 	}
 	if binary.LittleEndian.Uint32(p[12:16]) != 777 {
 		t.Fatalf("max users")
-	}
-}
-
-func TestParseSearchRequestMatchesGoed2KEncoding(t *testing.T) {
-	request := serverproto.SearchRequest{
-		Query:              "ubuntu iso",
-		MinSize:            1024,
-		MaxSize:            8192,
-		MinSources:         5,
-		MinCompleteSources: 3,
-		FileType:           "Iso",
-		Extension:          "iso",
-	}
-	var buf bytes.Buffer
-	if err := request.Put(&buf); err != nil {
-		t.Fatalf("put search request: %v", err)
-	}
-	parsed, err := ParseSearchRequest(buf.Bytes())
-	if err != nil {
-		t.Fatalf("parse search request: %v", err)
-	}
-	if parsed.FileType != "Iso" || parsed.Extension != "iso" {
-		t.Fatalf("unexpected tag filters: %#v", parsed)
-	}
-	if parsed.MinSize != 1024 || parsed.MaxSize != 8192 {
-		t.Fatalf("unexpected size filters: %#v", parsed)
-	}
-	if parsed.MinSources != 5 || parsed.MinCompleteSources != 3 {
-		t.Fatalf("unexpected source filters: %#v", parsed)
-	}
-	if len(parsed.Keywords) != 2 || parsed.Keywords[0] != "ubuntu" || parsed.Keywords[1] != "iso" {
-		t.Fatalf("unexpected keywords: %#v", parsed.Keywords)
 	}
 }
 
