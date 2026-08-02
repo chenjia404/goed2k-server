@@ -2,10 +2,11 @@
 
 `github.com/chenjia404/goed2k-server` 是一个用 Go 实现的 ED2K/eMule Server，面向 `github.com/monkeyWie/goed2k` 客户端协议做兼容实现。
 
-当前版本重点提供三部分能力：
+当前版本重点提供四部分能力：
 
 - ED2K/eMule TCP/UDP Server 协议服务
 - HTTP 管理接口与嵌入式 Web 管理界面
+- 公开 HTTP JSON Tracker API 与资源搜索 Web 界面（独立端口）
 - 静态共享目录持久化（JSON / MySQL / PostgreSQL）
 
 项目目标不是复刻完整的 eMule 官方服务端，而是提供一个可运行、可测试、可扩展的服务端基础实现，便于你继续扩展协议能力和业务逻辑。
@@ -54,6 +55,18 @@
 - 低 ID 客户端 `ReportedIP` 回填（`reported_public_ip` 配置或自动检测公网来源）
 - 健康检查
 
+### 公开 HTTP JSON Tracker API 与 Web 搜索界面
+
+启用 `public_http_enabled` 后，服务端在独立端口（默认 `:9090`）提供：
+
+- JSON 格式资源搜索 API（`GET /api/v1/search`）
+- 文件详情与来源查询（`GET /api/v1/files/{hash}`、`/sources`）
+- 临时 peer 注册（`POST/GET /api/v1/announce`，纯内存，重启丢失）
+- Swarm 统计（`GET /api/v1/scrape`）
+- 嵌入式 Web 搜索界面（`/`、`/search`、`/file/{hash}`）
+
+公开 API 使用 JSON 而非 bencode，面向 ED2K 资源发现，不兼容标准 BitTorrent 客户端。
+
 ## 项目结构
 
 - [cmd/goed2k-server/main.go](goed2k-server/cmd/goed2k-server/main.go): 启动入口
@@ -62,6 +75,9 @@
 - [ed2ksrv/server_udp_callback.go](ed2ksrv/server_udp_callback.go): UDP 回调转发 `OP_GLOBCALLBACKREQ`
 - [ed2ksrv/admin.go](ed2ksrv/admin.go): HTTP 管理接口
 - [ed2ksrv/admin_ui.go](ed2ksrv/admin_ui.go): 嵌入式 Web 管理界面
+- [ed2ksrv/public.go](ed2ksrv/public.go): 公开 HTTP JSON Tracker API
+- [ed2ksrv/public_ui.go](ed2ksrv/public_ui.go): 公开 Web 搜索界面
+- [ed2ksrv/peer_store.go](ed2ksrv/peer_store.go): HTTP announce 临时 peer 存储
 - [ed2ksrv/catalog.go](goed2k-server/ed2ksrv/catalog.go): 共享文件目录和持久化
 - [ed2ksrv/offerfiles.go](goed2k-server/ed2ksrv/offerfiles.go): `OP_OFFERFILES` 协议处理
 - [ed2ksrv/protocol.go](goed2k-server/ed2ksrv/protocol.go): 搜索请求解析
@@ -176,7 +192,9 @@ cp config.example.json config.json
   "udp_port_offset": 4,
   "soft_files_limit": 5000,
   "hard_files_limit": 200000,
-  "max_users_advertised": 500000
+  "max_users_advertised": 500000,
+  "public_http_enabled": true,
+  "public_http_listen_address": ":9090"
 }
 ```
 
@@ -200,6 +218,7 @@ go run ./cmd/goed2k-server -config config.json
 
 - ED2K TCP 服务: `:4661`
 - HTTP 管理接口: `:8080`
+- 公开 HTTP 搜索/Tracker（可选）: `:9090`
 - ED2K UDP（可选，见下）: TCP 监听端口 + `udp_port_offset`（默认 **+4**，即 TCP 为 `4661` 时 UDP 为 **4665**）
 
 ### UDP 端口说明（eMule / aMule 客户端）
@@ -275,6 +294,14 @@ docker run --rm -p 4661:4661 -p 4665:4665/udp -p 8080:8080 \
 | `hard_files_limit` | 在 UDP 应答中通告的硬性文件限制 |
 | `max_users_advertised` | 在 UDP 应答中通告的最大用户数 |
 | `reported_public_ip` | 低 ID 客户端在 `IdChange` 中回填的公网 IPv4；留空时对公网来源自动检测 |
+| `public_http_enabled` | 是否启用公开 HTTP JSON Tracker API 与 Web 搜索界面 |
+| `public_http_listen_address` | 公开 HTTP 监听地址，默认 `:9090` |
+| `public_http_token` | 公开 API Token，非空时需 `X-Public-Token` 请求头 |
+| `public_announce_interval` | 建议客户端下次 announce 间隔（秒），默认 `1800` |
+| `public_min_announce_interval` | announce 最小间隔（秒），默认 `900` |
+| `public_peer_timeout` | HTTP 临时 peer 无心跳超时（秒），默认 `1800` |
+| `public_max_peers_returned` | 单次 announce 最多返回 peer 数，默认 `50` |
+| `public_search_batch_size` | 搜索 API 默认每页条数，默认 `50` |
 
 ### UDP 回调说明
 
@@ -530,6 +557,47 @@ curl -X POST \
   http://127.0.0.1:8080/api/persist
 ```
 
+## 公开 HTTP JSON Tracker API
+
+启用 `public_http_enabled` 后，默认监听 `:9090`。以下示例假设无 Token 鉴权。
+
+### 搜索资源
+
+#### `GET /api/v1/search`
+
+```bash
+curl 'http://127.0.0.1:9090/api/v1/search?q=ubuntu&ext=iso&sort=size&page=1&per_page=20'
+```
+
+### 文件详情与来源
+
+```bash
+curl http://127.0.0.1:9090/api/v1/files/31D6CFE0D16AE931B73C59D7E0C089C0
+curl http://127.0.0.1:9090/api/v1/files/31D6CFE0D16AE931B73C59D7E0C089C0/sources
+```
+
+### 临时 peer 注册（重启丢失）
+
+#### `POST /api/v1/announce`
+
+```bash
+curl -X POST http://127.0.0.1:9090/api/v1/announce \
+  -H 'Content-Type: application/json' \
+  -d '{"hash":"31D6CFE0D16AE931B73C59D7E0C089C0","host":"203.0.113.10","port":4662,"left":0,"event":"started","peer_id":"demo-peer"}'
+```
+
+### Swarm 统计
+
+#### `GET /api/v1/scrape`
+
+```bash
+curl 'http://127.0.0.1:9090/api/v1/scrape?hash=31D6CFE0D16AE931B73C59D7E0C089C0'
+```
+
+### Web 搜索界面
+
+浏览器访问 `http://127.0.0.1:9090/` 即可使用嵌入式搜索界面。
+
 ## 测试
 
 运行全部测试：
@@ -548,6 +616,7 @@ go test ./...
 - TCP/UDP 回调转发
 - UDP 全局搜索、来源查询、服务状态
 - 管理接口鉴权、Web UI
+- 公开 HTTP JSON Tracker API（搜索、来源、announce、scrape）与 Web 搜索界面
 - 健康检查、客户端/文件 CRUD、目录持久化、统计接口
 
 ## 当前限制

@@ -9,13 +9,19 @@ import (
 )
 
 const (
-	defaultListenAddress      = ":4661"
-	defaultAdminListenAddress = ":8080"
-	defaultServerName         = "goed2k-server"
-	defaultDescription        = "Minimal eD2k/eMule compatible server"
-	defaultBatchSize          = 200
-	defaultCatalogPath        = "catalog.json"
-	defaultDatabaseTable      = "shared_files"
+	defaultListenAddress           = ":4661"
+	defaultAdminListenAddress        = ":8080"
+	defaultPublicHTTPListenAddress = ":9090"
+	defaultServerName                = "goed2k-server"
+	defaultDescription               = "Minimal eD2k/eMule compatible server"
+	defaultBatchSize                 = 200
+	defaultCatalogPath               = "catalog.json"
+	defaultDatabaseTable             = "shared_files"
+	defaultPublicAnnounceInterval    = 1800
+	defaultPublicMinAnnounceInterval = 900
+	defaultPublicPeerTimeout         = 1800
+	defaultPublicMaxPeersReturned    = 50
+	defaultPublicSearchBatchSize     = 50
 )
 
 // Config describes the runtime settings for the ED2K server.
@@ -45,6 +51,23 @@ type Config struct {
 	// 留空时若连接来源 IP 为公网地址则自动使用，否则返回 0。
 	ReportedPublicIP string `json:"reported_public_ip"`
 
+	// PublicHTTPEnabled 启用独立端口的 JSON Tracker API 与公开 Web 搜索界面。
+	PublicHTTPEnabled bool `json:"public_http_enabled"`
+	// PublicHTTPListenAddress 为公开 HTTP 服务监听地址（默认 :9090）。
+	PublicHTTPListenAddress string `json:"public_http_listen_address"`
+	// PublicHTTPToken 非空时公开 API 需携带 X-Public-Token 请求头。
+	PublicHTTPToken string `json:"public_http_token"`
+	// PublicAnnounceInterval 建议客户端下次 announce 间隔（秒）。
+	PublicAnnounceInterval int `json:"public_announce_interval"`
+	// PublicMinAnnounceInterval announce 最小间隔（秒）。
+	PublicMinAnnounceInterval int `json:"public_min_announce_interval"`
+	// PublicPeerTimeout HTTP 临时 peer 无心跳超时移除时间（秒）。
+	PublicPeerTimeout int `json:"public_peer_timeout"`
+	// PublicMaxPeersReturned 单次 announce 最多返回 peer 数。
+	PublicMaxPeersReturned int `json:"public_max_peers_returned"`
+	// PublicSearchBatchSize 搜索接口默认每页条数上限。
+	PublicSearchBatchSize int `json:"public_search_batch_size"`
+
 	reportedPublicIP uint32
 }
 
@@ -65,7 +88,13 @@ func DefaultConfig() Config {
 		UDPPortOffset:       4,
 		SoftFilesLimit:      5000,
 		HardFilesLimit:      200000,
-		MaxUsersAdvertised:  500000,
+		MaxUsersAdvertised:          500000,
+		PublicHTTPListenAddress:     defaultPublicHTTPListenAddress,
+		PublicAnnounceInterval:      defaultPublicAnnounceInterval,
+		PublicMinAnnounceInterval:   defaultPublicMinAnnounceInterval,
+		PublicPeerTimeout:           defaultPublicPeerTimeout,
+		PublicMaxPeersReturned:      defaultPublicMaxPeersReturned,
+		PublicSearchBatchSize:       defaultPublicSearchBatchSize,
 	}
 }
 
@@ -94,6 +123,24 @@ func (c Config) Normalize() (Config, error) {
 	}
 	if c.HardFilesLimit <= 0 {
 		c.HardFilesLimit = 200000
+	}
+	if c.PublicHTTPListenAddress == "" {
+		c.PublicHTTPListenAddress = defaultPublicHTTPListenAddress
+	}
+	if c.PublicAnnounceInterval <= 0 {
+		c.PublicAnnounceInterval = defaultPublicAnnounceInterval
+	}
+	if c.PublicMinAnnounceInterval <= 0 {
+		c.PublicMinAnnounceInterval = defaultPublicMinAnnounceInterval
+	}
+	if c.PublicPeerTimeout <= 0 {
+		c.PublicPeerTimeout = defaultPublicPeerTimeout
+	}
+	if c.PublicMaxPeersReturned <= 0 {
+		c.PublicMaxPeersReturned = defaultPublicMaxPeersReturned
+	}
+	if c.PublicSearchBatchSize <= 0 {
+		c.PublicSearchBatchSize = defaultPublicSearchBatchSize
 	}
 	if c.StorageBackend == "" {
 		c.StorageBackend = storageBackendJSON

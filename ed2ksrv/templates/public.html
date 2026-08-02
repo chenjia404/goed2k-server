@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="{{.Lang}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.T.Title}} - {{.ServerName}}</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body data-token-enabled="{{.TokenEnabled}}">
+  <div class="lang-switch">
+    <a href="#" data-lang="zh"{{if .IsZH}} class="active"{{end}}>中文</a>
+    <a href="#" data-lang="en"{{if .IsEN}} class="active"{{end}}>EN</a>
+  </div>
+  <div class="container">
+    <header>
+      <h1>{{.T.Title}}</h1>
+      <p>{{.T.Subtitle}}</p>
+    </header>
+
+    <section id="login-panel" class="login-panel{{if not .TokenEnabled}} hidden{{end}}">
+      <h2>{{.T.LoginTitle}}</h2>
+      <p>{{if .IsEN}}API token is required to search resources.{{else}}搜索资源前需要输入 API Token。{{end}}</p>
+      <form id="login-form">
+        <input type="password" id="login-token" placeholder="{{.T.LoginPH}}" autocomplete="off">
+        <button type="submit" class="btn">{{.T.LoginBtn}}</button>
+      </form>
+    </section>
+
+    <div id="main-panel"{{if .TokenEnabled}} class="hidden"{{end}}>
+      <form id="search-form" class="search-box">
+        <input type="text" id="search-input" placeholder="{{.T.SearchPH}}" autocomplete="off">
+        <button type="submit">{{.T.SearchBtn}}</button>
+      </form>
+      <div class="filters">
+        <label>{{.T.SortLabel}}
+          <select id="sort-select">
+            <option value="name">{{.T.SortName}}</option>
+            <option value="size">{{.T.SortSize}}</option>
+            <option value="sources">{{.T.SortSources}}</option>
+          </select>
+        </label>
+        <label>{{.T.ExtLabel}}
+          <input type="text" id="ext-input" placeholder="iso">
+        </label>
+        <label>{{.T.TypeLabel}}
+          <input type="text" id="type-input" placeholder="Iso">
+        </label>
+      </div>
+      <div id="app"></div>
+    </div>
+  </div>
+  <div id="public-i18n" data-b64="{{.I18NBase64}}" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>

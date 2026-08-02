@@ -24,7 +24,7 @@ COPY --from=builder /out/goed2k-server /app/goed2k-server
 
 USER 65532:65532
 
-EXPOSE 4661/tcp 4665/udp 8080/tcp
+EXPOSE 4661/tcp 4665/udp 8080/tcp 9090/tcp
 
 ENTRYPOINT ["/app/goed2k-server"]
 CMD ["-config", "/app/config.json"]

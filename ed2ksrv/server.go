@@ -68,7 +68,10 @@ type Server struct {
 	listener      net.Listener
 	udpConn       *net.UDPConn
 	adminListener net.Listener
-	clients       map[int32]*clientSession
+	publicListener net.Listener
+	peerStore      *PeerStore
+	peerStoreOnce  sync.Once
+	clients        map[int32]*clientSession
 	dynamicFiles  map[string]*dynamicSharedFile
 	auditLog      []AuditEntry
 	closed        chan struct{}
@@ -172,6 +175,17 @@ func (s *Server) ListenAndServe() error {
 			}
 		}()
 	}
+	if s.cfg.PublicHTTPEnabled && s.cfg.PublicHTTPListenAddress != "" {
+		publicListener, err := net.Listen("tcp", s.cfg.PublicHTTPListenAddress)
+		if err != nil {
+			return err
+		}
+		go func() {
+			if err := s.ServePublic(publicListener); err != nil && !errors.Is(err, net.ErrClosed) {
+				s.logger.Error("public http server stopped", "err", err)
+			}
+		}()
+	}
 	listener, err := net.Listen("tcp", s.cfg.ListenAddress)
 	if err != nil {
 		return err
@@ -216,6 +230,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	udpConn := s.udpConn
 	s.udpConn = nil
 	adminListener := s.adminListener
+	publicListener := s.publicListener
+	peerStore := s.peerStore
 	clients := make([]*clientSession, 0, len(s.clients))
 	for _, client := range s.clients {
 		clients = append(clients, client)
@@ -230,6 +246,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	if adminListener != nil {
 		_ = adminListener.Close()
+	}
+	if publicListener != nil {
+		_ = publicListener.Close()
+	}
+	if peerStore != nil {
+		peerStore.Close()
 	}
 	if s.catalog != nil {
 		_ = s.catalog.Close()
