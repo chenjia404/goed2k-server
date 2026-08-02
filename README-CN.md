@@ -192,7 +192,9 @@ cp config.example.json config.json
   "udp_port_offset": 4,
   "soft_files_limit": 5000,
   "hard_files_limit": 200000,
-  "max_users_advertised": 500000
+  "max_users_advertised": 500000,
+  "public_http_enabled": true,
+  "public_http_listen_address": ":9090"
 }
 ```
 
