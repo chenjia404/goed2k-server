@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPublicHTTPSearchAndAnnounce(t *testing.T) {
@@ -141,8 +142,131 @@ func TestPublicHTTPSearchAndAnnounce(t *testing.T) {
 	})
 }
 
+func TestPublicHTTPAuthRequired(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.CatalogPath = filepath.Join("..", "testdata", "catalog.json")
+	cfg.AdminListenAddress = ""
+	cfg.PublicHTTPToken = "secret-token"
+
+	catalog, err := LoadCatalog(cfg.CatalogPath)
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	server, err := NewServer(cfg, catalog, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	publicListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen public: %v", err)
+	}
+	defer publicListener.Close()
+
+	go func() { _ = server.ServePublic(publicListener) }()
+	defer shutdownServer(t, server)
+
+	baseURL := "http://" + publicListener.Addr().String()
+
+	resp, err := http.Get(baseURL + "/api/v1/search?q=ubuntu")
+	if err != nil {
+		t.Fatalf("get search: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	}
+
+	req := newGETRequest(t, baseURL+"/api/v1/search?q=ubuntu")
+	req.Header.Set("X-Public-Token", "secret-token")
+	var items []FileRecord
+	getJSON(t, req, &items)
+	if len(items) != 1 {
+		t.Fatalf("expected authorized search result, got %d", len(items))
+	}
+}
+
+func TestPublicAnnounceStoppedWithoutPort(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.CatalogPath = filepath.Join("..", "testdata", "catalog.json")
+	cfg.AdminListenAddress = ""
+
+	catalog, err := LoadCatalog(cfg.CatalogPath)
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	server, err := NewServer(cfg, catalog, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	publicListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen public: %v", err)
+	}
+	defer publicListener.Close()
+
+	go func() { _ = server.ServePublic(publicListener) }()
+	defer shutdownServer(t, server)
+
+	baseURL := "http://" + publicListener.Addr().String()
+	hash := "31D6CFE0D16AE931B73C59D7E0C089C0"
+
+	startPayload := map[string]any{
+		"hash": hash, "host": "203.0.113.20", "port": 4662,
+		"left": 0, "event": "started", "peer_id": "stop-test-peer",
+	}
+	startBody, _ := json.Marshal(startPayload)
+	startReq, _ := http.NewRequest(http.MethodPost, baseURL+"/api/v1/announce", strings.NewReader(string(startBody)))
+	startReq.Header.Set("Content-Type", "application/json")
+	startResp, err := http.DefaultClient.Do(startReq)
+	if err != nil {
+		t.Fatalf("start announce: %v", err)
+	}
+	startResp.Body.Close()
+
+	stopPayload := map[string]any{
+		"hash": hash, "event": "stopped", "peer_id": "stop-test-peer",
+	}
+	stopBody, _ := json.Marshal(stopPayload)
+	stopReq, _ := http.NewRequest(http.MethodPost, baseURL+"/api/v1/announce", strings.NewReader(string(stopBody)))
+	stopReq.Header.Set("Content-Type", "application/json")
+	stopResp, err := http.DefaultClient.Do(stopReq)
+	if err != nil {
+		t.Fatalf("stop announce: %v", err)
+	}
+	defer stopResp.Body.Close()
+	if stopResp.StatusCode != http.StatusOK {
+		t.Fatalf("stop announce status: %d", stopResp.StatusCode)
+	}
+
+	var sources PublicSourcesResponse
+	getJSON(t, newGETRequest(t, baseURL+"/api/v1/files/"+hash+"/sources"), &sources)
+	for _, peer := range sources.Peers {
+		if peer.Type == "http" && peer.PeerID == "stop-test-peer" {
+			t.Fatalf("stopped peer still present in sources")
+		}
+	}
+}
+
+func TestExcludeAnnouncePeer(t *testing.T) {
+	self := HTTPPeer{PeerID: "p1", Host: "1.2.3.4", Port: 4662}
+	peers := []PublicPeer{
+		{Type: "http", PeerID: "p1", Host: "1.2.3.4", Port: 4662},
+		{Type: "http", PeerID: "p2", Host: "1.2.3.5", Port: 4662},
+		{Type: "ed2k", Host: "10.0.0.1", Port: 4662},
+	}
+	filtered := excludeAnnouncePeer(peers, self)
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 peers after exclusion, got %d", len(filtered))
+	}
+	if filtered[0].PeerID == "p1" {
+		t.Fatalf("self peer was not excluded")
+	}
+}
+
 func TestPeerStoreUpsertAndExpire(t *testing.T) {
-	store := NewPeerStore(50 * 1e9) // very long timeout
+	store := NewPeerStore(50 * time.Second)
 	store.Upsert("HASH", HTTPPeer{PeerID: "p1", Host: "1.2.3.4", Port: 4662, Left: 0})
 	peers := store.Peers("HASH")
 	if len(peers) != 1 {

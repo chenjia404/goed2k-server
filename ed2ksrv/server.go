@@ -69,8 +69,9 @@ type Server struct {
 	udpConn       *net.UDPConn
 	adminListener net.Listener
 	publicListener net.Listener
-	peerStore     *PeerStore
-	clients       map[int32]*clientSession
+	peerStore      *PeerStore
+	peerStoreOnce  sync.Once
+	clients        map[int32]*clientSession
 	dynamicFiles  map[string]*dynamicSharedFile
 	auditLog      []AuditEntry
 	closed        chan struct{}

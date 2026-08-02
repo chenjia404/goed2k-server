@@ -65,11 +65,10 @@ func (s *Server) ServePublic(listener net.Listener) error {
 }
 
 func (s *Server) ensurePeerStore() {
-	if s.peerStore != nil {
-		return
-	}
-	s.peerStore = NewPeerStore(time.Duration(s.cfg.PublicPeerTimeout) * time.Second)
-	s.peerStore.StartCleanup(time.Minute)
+	s.peerStoreOnce.Do(func() {
+		s.peerStore = NewPeerStore(time.Duration(s.cfg.PublicPeerTimeout) * time.Second)
+		s.peerStore.StartCleanup(time.Minute)
+	})
 }
 
 func (s *Server) publicMux() http.Handler {
@@ -195,7 +194,8 @@ func (s *Server) handlePublicAnnounce(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, fmt.Errorf("invalid file hash: %w", err))
 		return
 	}
-	if req.Port <= 0 || req.Port > 65535 {
+	event := strings.ToLower(strings.TrimSpace(req.Event))
+	if event != "stopped" && (req.Port <= 0 || req.Port > 65535) {
 		writeAPIError(w, http.StatusBadRequest, fmt.Errorf("invalid port"))
 		return
 	}
@@ -211,7 +211,6 @@ func (s *Server) handlePublicAnnounce(w http.ResponseWriter, r *http.Request) {
 		Left:       req.Left,
 		RemoteAddr: r.RemoteAddr,
 	}
-	event := strings.ToLower(strings.TrimSpace(req.Event))
 	switch event {
 	case "stopped":
 		s.peerStore.Remove(hash.String(), peer)
@@ -224,7 +223,7 @@ func (s *Server) handlePublicAnnounce(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, fmt.Errorf("unsupported event: %s", req.Event))
 		return
 	}
-	response := s.publicAnnounceResponse(hash)
+	response := s.publicAnnounceResponse(hash, peer)
 	writeAPI(w, http.StatusOK, response, nil)
 }
 
@@ -252,10 +251,19 @@ func (s *Server) handlePublicScrape(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) searchFiles(query SearchQuery) []FileRecord {
+	seen := make(map[string]struct{})
 	results := make([]FileRecord, 0)
+	appendUnique := func(record FileRecord) {
+		key := record.Hash.String()
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		results = append(results, record)
+	}
 	for _, entry := range s.catalog.Search(query) {
 		if record, ok := s.catalog.Get(entry.Hash); ok {
-			results = append(results, record)
+			appendUnique(record)
 		}
 	}
 	s.mu.RLock()
@@ -263,7 +271,7 @@ func (s *Server) searchFiles(query SearchQuery) []FileRecord {
 	for _, shared := range s.dynamicFiles {
 		record := shared.materialize()
 		if matchesRecord(record, query) {
-			results = append(results, record)
+			appendUnique(record)
 		}
 	}
 	return results
@@ -317,9 +325,9 @@ func (s *Server) publicSources(hash protocol.Hash) PublicSourcesResponse {
 	}
 }
 
-func (s *Server) publicAnnounceResponse(hash protocol.Hash) announceResponse {
+func (s *Server) publicAnnounceResponse(hash protocol.Hash, self HTTPPeer) announceResponse {
 	sources := s.publicSources(hash)
-	peers := sources.Peers
+	peers := excludeAnnouncePeer(sources.Peers, self)
 	maxPeers := s.cfg.PublicMaxPeersReturned
 	if maxPeers > 0 && len(peers) > maxPeers {
 		peers = peers[:maxPeers]
@@ -331,6 +339,23 @@ func (s *Server) publicAnnounceResponse(hash protocol.Hash) announceResponse {
 		Incomplete:  sources.Incomplete,
 		Peers:       peers,
 	}
+}
+
+func excludeAnnouncePeer(peers []PublicPeer, self HTTPPeer) []PublicPeer {
+	selfKey := peerStoreKey(self)
+	out := make([]PublicPeer, 0, len(peers))
+	for _, peer := range peers {
+		candidate := HTTPPeer{
+			PeerID: peer.PeerID,
+			Host:   peer.Host,
+			Port:   peer.Port,
+		}
+		if peer.Type == "http" && peerStoreKey(candidate) == selfKey {
+			continue
+		}
+		out = append(out, peer)
+	}
+	return out
 }
 
 func (s *Server) publicScrapeStats(hash protocol.Hash) map[string]int {
@@ -426,8 +451,4 @@ func clientHostFromRequest(r *http.Request) string {
 		return strings.TrimSpace(r.RemoteAddr)
 	}
 	return host
-}
-
-func ed2kLink(record FileRecord) string {
-	return fmt.Sprintf("ed2k://|file|%s|%d|%s|/", record.Name, record.Size, record.Hash.String())
 }

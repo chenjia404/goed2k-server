@@ -614,6 +614,7 @@ go test ./...
 - TCP/UDP 回调转发
 - UDP 全局搜索、来源查询、服务状态
 - 管理接口鉴权、Web UI
+- 公开 HTTP JSON Tracker API（搜索、来源、announce、scrape）与 Web 搜索界面
 - 健康检查、客户端/文件 CRUD、目录持久化、统计接口
 
 ## 当前限制

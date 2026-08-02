@@ -2,7 +2,6 @@ package ed2ksrv
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 )
@@ -151,18 +150,4 @@ func (ps *PeerStore) Stats(hash string) (complete, incomplete int) {
 		}
 	}
 	return complete, incomplete
-}
-
-// ScrapeStats summarizes swarm stats for one or more hashes.
-func (ps *PeerStore) ScrapeStats(hashes []string) map[string]map[string]int {
-	out := make(map[string]map[string]int, len(hashes))
-	for _, hash := range hashes {
-		complete, incomplete := ps.Stats(hash)
-		out[strings.ToUpper(hash)] = map[string]int{
-			"complete":   complete,
-			"incomplete": incomplete,
-			"downloaded": 0,
-		}
-	}
-	return out
 }

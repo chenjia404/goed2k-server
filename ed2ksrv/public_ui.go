@@ -24,12 +24,13 @@ func init() {
 }
 
 type publicUIData struct {
-	ServerName string
-	Lang       string
-	IsEN       bool
-	IsZH       bool
-	T          publicHTMLStrings
-	I18NBase64 string
+	ServerName   string
+	TokenEnabled bool
+	Lang         string
+	IsEN         bool
+	IsZH         bool
+	T            publicHTMLStrings
+	I18NBase64   string
 }
 
 func (s *Server) handlePublicUI(w http.ResponseWriter, r *http.Request) {
@@ -51,8 +52,9 @@ func (s *Server) handlePublicUI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := publicUIData{
-		ServerName: s.cfg.ServerName,
-		Lang:       lang,
+		ServerName:   s.cfg.ServerName,
+		TokenEnabled: strings.TrimSpace(s.cfg.PublicHTTPToken) != "",
+		Lang:         lang,
 		IsEN:       lang == "en",
 		IsZH:       lang == "zh",
 		T:          htmlStr,
@@ -116,6 +118,9 @@ type publicHTMLStrings struct {
 	NoResults   string
 	Loading     string
 	Error       string
+	LoginTitle  string
+	LoginPH     string
+	LoginBtn    string
 }
 
 type publicJSStrings struct {
@@ -140,6 +145,9 @@ type publicJSStrings struct {
 	Loading     string
 	Error       string
 	PageInfo    string
+	LoginPH     string
+	LoginBtn    string
+	LoginRequired string
 }
 
 func resolvePublicLocale(r *http.Request) string {
@@ -165,6 +173,7 @@ func getPublicLocalePack(lang string) (publicHTMLStrings, publicJSStrings) {
 				SourcesLbl: "Sources", CompleteLbl: "Complete", PeersTitle: "Peer List",
 				Ed2kLink: "ED2K Link", CopyBtn: "Copy", CopiedBtn: "Copied",
 				NoResults: "No results found", Loading: "Loading...", Error: "Request failed",
+				LoginTitle: "API Token Required", LoginPH: "Enter X-Public-Token", LoginBtn: "Continue",
 			}, publicJSStrings{
 				SearchPH: "Enter keywords, e.g. ubuntu iso", SearchBtn: "Search",
 				SortName: "Name", SortSize: "Size", SortSources: "Sources",
@@ -174,6 +183,8 @@ func getPublicLocalePack(lang string) (publicHTMLStrings, publicJSStrings) {
 				Ed2kLink: "ED2K Link", CopyBtn: "Copy", CopiedBtn: "Copied",
 				NoResults: "No results found", Loading: "Loading...", Error: "Request failed",
 				PageInfo: "Page {page} / {pages} ({total} items)",
+				LoginPH: "Enter X-Public-Token", LoginBtn: "Continue",
+				LoginRequired: "API token is required to search resources.",
 			}
 	}
 	return publicHTMLStrings{
@@ -186,6 +197,7 @@ func getPublicLocalePack(lang string) (publicHTMLStrings, publicJSStrings) {
 			SourcesLbl: "来源数", CompleteLbl: "完整源", PeersTitle: "Peer 列表",
 			Ed2kLink: "ED2K 链接", CopyBtn: "复制", CopiedBtn: "已复制",
 			NoResults: "未找到结果", Loading: "加载中...", Error: "请求失败",
+			LoginTitle: "需要 API Token", LoginPH: "输入 X-Public-Token", LoginBtn: "继续",
 		}, publicJSStrings{
 			SearchPH: "输入关键词，例如 ubuntu iso", SearchBtn: "搜索",
 			SortName: "名称", SortSize: "大小", SortSources: "来源数",
@@ -195,6 +207,8 @@ func getPublicLocalePack(lang string) (publicHTMLStrings, publicJSStrings) {
 			Ed2kLink: "ED2K 链接", CopyBtn: "复制", CopiedBtn: "已复制",
 			NoResults: "未找到结果", Loading: "加载中...", Error: "请求失败",
 			PageInfo: "第 {page} / {pages} 页（共 {total} 条）",
+			LoginPH: "输入 X-Public-Token", LoginBtn: "继续",
+			LoginRequired: "搜索资源前需要输入 API Token。",
 		}
 }
 
@@ -280,6 +294,17 @@ header p { color: var(--muted); font-size: 0.95rem; }
 .peers-table th { color: var(--muted); font-weight: 500; }
 .status-msg { text-align: center; color: var(--muted); padding: 2rem; }
 .status-msg.error { color: #ef4444; }
+.login-panel {
+  max-width: 420px; margin: 2rem auto; padding: 1.5rem;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+}
+.login-panel h2 { font-size: 1.1rem; margin-bottom: 0.75rem; }
+.login-panel p { color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }
+.login-panel input {
+  width: 100%; padding: 0.65rem 1rem; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg); color: var(--text); margin-bottom: 0.75rem;
+}
+.hidden { display: none !important; }
 .back-link {
   display: inline-block; color: var(--accent); text-decoration: none;
   margin-bottom: 1rem; font-size: 0.9rem;
@@ -292,12 +317,38 @@ header p { color: var(--muted); font-size: 0.95rem; }
 
 const publicUIScript = `(() => {
   const i18n = JSON.parse(atob(document.getElementById('public-i18n').dataset.b64));
-  const token = document.getElementById('public-token')?.dataset.token || '';
+  const tokenEnabled = document.body.dataset.tokenEnabled === 'true';
+  let publicToken = tokenEnabled ? (window.localStorage.getItem('goed2k_public_token') || '') : '';
   const lang = document.documentElement.lang || 'zh';
+  const loginPanel = document.getElementById('login-panel');
+  const mainPanel = document.getElementById('main-panel');
+  const loginForm = document.getElementById('login-form');
+
+  function setAuthState(authenticated) {
+    loginPanel?.classList.toggle('hidden', authenticated);
+    mainPanel?.classList.toggle('hidden', !authenticated);
+  }
+
+  if (tokenEnabled && !publicToken) {
+    setAuthState(false);
+  } else {
+    setAuthState(true);
+    boot();
+  }
+
+  loginForm?.addEventListener('submit', e => {
+    e.preventDefault();
+    const value = document.getElementById('login-token').value.trim();
+    if (!value) return;
+    publicToken = value;
+    window.localStorage.setItem('goed2k_public_token', value);
+    setAuthState(true);
+    boot();
+  });
 
   function api(path) {
     const headers = {};
-    if (token) headers['X-Public-Token'] = token;
+    if (publicToken) headers['X-Public-Token'] = publicToken;
     return fetch(path, { headers }).then(r => {
       if (!r.ok) throw new Error(i18n.Error + ' (' + r.status + ')');
       return r.json();
@@ -319,10 +370,13 @@ const publicUIScript = `(() => {
   }
 
   const path = location.pathname;
-  if (path.startsWith('/file/')) {
-    renderDetail(path.replace('/file/', ''));
-  } else {
-    renderSearch();
+
+  function boot() {
+    if (path.startsWith('/file/')) {
+      renderDetail(path.replace('/file/', ''));
+    } else {
+      renderSearch();
+    }
   }
 
   function renderSearch() {
@@ -472,5 +526,14 @@ const publicUIScript = `(() => {
     if (type) params.set('type', type);
     params.set('lang', lang);
     location.href = '/search?' + params.toString();
+  });
+
+  document.querySelectorAll('.lang-switch a[data-lang]').forEach(link => {
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      const params = new URLSearchParams(location.search);
+      params.set('lang', link.dataset.lang);
+      location.search = params.toString();
+    });
   });
 })();`
