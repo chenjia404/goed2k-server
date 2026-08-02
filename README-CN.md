@@ -47,7 +47,7 @@
 - 动态用户表与运行时统计
 - 动态共享文件注册、更新、断链撤销（内存索引，参与搜索与来源查询）
 - 静态共享目录持久化到 JSON、MySQL 或 PostgreSQL
-- HTTP 管理 API（文件/客户端 CRUD、批量删除、审计日志、统计）
+- HTTP 管理 API（文件/客户端 CRUD、批量删除、审计日志、统计、动态共享来源标注与撤销）
 - 嵌入式 Web 管理界面（中英文，路径 `/`）
 - 管理接口 Token 鉴权
 - 列表分页、过滤、排序
@@ -61,6 +61,7 @@
 - [ed2ksrv/server_udp.go](ed2ksrv/server_udp.go): ED2K UDP 协议应答（状态、搜索、来源、回调等）
 - [ed2ksrv/server_udp_callback.go](ed2ksrv/server_udp_callback.go): UDP 回调转发 `OP_GLOBCALLBACKREQ`
 - [ed2ksrv/admin.go](ed2ksrv/admin.go): HTTP 管理接口
+- [ed2ksrv/admin_files.go](ed2ksrv/admin_files.go): 管理端文件来源标注与客户端共享撤销
 - [ed2ksrv/admin_ui.go](ed2ksrv/admin_ui.go): 嵌入式 Web 管理界面
 - [ed2ksrv/catalog.go](goed2k-server/ed2ksrv/catalog.go): 共享文件目录和持久化
 - [ed2ksrv/offerfiles.go](goed2k-server/ed2ksrv/offerfiles.go): `OP_OFFERFILES` 协议处理
@@ -463,9 +464,15 @@ curl -H 'X-Admin-Token: change-me' \
 - `search`: 按文件名或 Hash 模糊过滤
 - `file_type`: 按文件类型过滤
 - `extension`: 按扩展名过滤
+- `source`: 按索引来源过滤，`static`（静态目录）或 `dynamic`（客户端动态共享）
 - `page`: 页码，默认 `1`
 - `per_page`: 每页条数，默认 `50`，最大 `500`
-- `sort`: `name`、`size`、`sources`
+- `sort`: `name`、`size`、`sources`、`source`
+
+响应中每条记录包含：
+
+- `source`: `static` 或 `dynamic`
+- `offering_client_ids`: 动态共享时，提供该文件的在线客户端 ID 列表
 
 示例：
 
@@ -510,12 +517,28 @@ curl -X POST \
 
 #### `DELETE /api/files/{hash}`
 
+仅可删除静态目录中的文件。若 Hash 仅存在于动态共享索引，返回 `409 Conflict`。
+
 示例：
 
 ```bash
 curl -X DELETE \
   -H 'X-Admin-Token: change-me' \
   http://127.0.0.1:8080/api/files/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+```
+
+### 撤销客户端动态共享
+
+#### `POST /api/clients/{id}/revoke-offers`
+
+清除指定在线客户端通过 `OP_OFFERFILES` 注册的动态共享，不断开 TCP 连接。
+
+示例：
+
+```bash
+curl -X POST \
+  -H 'X-Admin-Token: change-me' \
+  http://127.0.0.1:8080/api/clients/2130706433/revoke-offers
 ```
 
 ### 手动持久化目录
@@ -553,7 +576,7 @@ go test ./...
 ## 当前限制
 
 - 参考客户端 `goed2k` 尚未实现 `OP_OFFERFILES` 发送逻辑，端到端动态共享需客户端侧补齐
-- 动态共享索引仅内存态，重启不恢复；Admin API 只能管理静态目录
+- 动态共享索引仅内存态，重启不恢复；Admin API 可标注来源并撤销客户端动态共享，但 `POST/DELETE /api/files` 仅管理静态目录
 - 未实现完整 eMule 发布协议高级特性（增量更新、细粒度发布状态）
 - 同一公网 IP 下多个 TCP 客户端会共享高 ID（按来源 IP 分配），后登录者覆盖先前者会话表项
 - 仅单一 `admin_token` 鉴权，无 RBAC；审计日志仅内存保留最近 200 条
@@ -565,5 +588,4 @@ go test ./...
 1. 在 `goed2k` 客户端补 `OP_OFFERFILES` 发送逻辑
 2. 增加 OpenAPI 文档和 Swagger UI
 3. 审计日志持久化与 RBAC
-4. 动态共享来源标注与按客户端撤销
-5. SQLite 轻量存储后端（可选）
+4. SQLite 轻量存储后端（可选）

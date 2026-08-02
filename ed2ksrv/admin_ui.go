@@ -116,6 +116,7 @@ const adminUIScript = `(() => {
   const clientSearch = document.getElementById('clientSearch');
   const fileSearch = document.getElementById('fileSearch');
   const fileTypeFilter = document.getElementById('fileTypeFilter');
+  const fileSourceFilter = document.getElementById('fileSourceFilter');
   const detailView = document.getElementById('detailView');
   const clientsBody = document.getElementById('clientsBody');
   const filesBody = document.getElementById('filesBody');
@@ -202,6 +203,22 @@ const adminUIScript = `(() => {
     document.getElementById(idPrefix + 'Next').disabled = currentPage >= totalPages;
   }
 
+  function formatSourceLabel(source) {
+    if (source === 'dynamic') {
+      return i18n.sourceDynamic;
+    }
+    if (source === 'static') {
+      return i18n.sourceStatic;
+    }
+    return source || '-';
+  }
+
+  async function revokeClientOffers(clientID) {
+    await apiFetch('/api/clients/' + encodeURIComponent(String(clientID)) + '/revoke-offers', { method: 'POST' });
+    setToast(i18n.toastRevoked);
+    await refreshAll();
+  }
+
   function showDetail(data) {
     detailView.textContent = JSON.stringify(data, null, 2);
   }
@@ -244,17 +261,22 @@ const adminUIScript = `(() => {
         '<td><a class="row-link" href="/clients/' + client.client_id + '">' + (client.client_name || '-') + '</a></td>' +
         '<td>' + (client.remote_address || '-') + '</td>' +
         '<td>' + (client.listen_endpoint || '-') + '</td>' +
-        '<td>' + formatTime(client.last_seen_at) + '</td>';
+        '<td>' + formatTime(client.last_seen_at) + '</td>' +
+        '<td><button type="button" class="ghost">' + i18n.btnRevokeOffers + '</button></td>';
       row.querySelector('a').addEventListener('click', function (event) {
         event.preventDefault();
         pushRoute('/clients/' + client.client_id);
         loadClientDetail(client.client_id).catch((error) => setToast(error.message, true));
       });
+      row.querySelector('button').addEventListener('click', function (event) {
+        event.stopPropagation();
+        revokeClientOffers(client.client_id).catch((error) => setToast(error.message, true));
+      });
       row.addEventListener('click', function () { showDetail(client); });
       clientsBody.appendChild(row);
     });
     if (!data.length) {
-      clientsBody.innerHTML = '<tr><td colspan="5" class="empty">' + i18n.emptyClients + '</td></tr>';
+      clientsBody.innerHTML = '<tr><td colspan="6" class="empty">' + i18n.emptyClients + '</td></tr>';
     }
     updatePager('clients', payload.meta || {});
   }
@@ -298,19 +320,25 @@ const adminUIScript = `(() => {
     if (fileTypeFilter.value.trim()) {
       query.set('file_type', fileTypeFilter.value.trim());
     }
+    if (fileSourceFilter.value.trim()) {
+      query.set('source', fileSourceFilter.value.trim().toLowerCase());
+    }
     const payload = await apiFetch('/api/files?' + query.toString());
     const data = payload.data;
     filesBody.innerHTML = '';
     data.forEach((file) => {
       const checked = state.selectedFiles.has(file.hash) ? ' checked' : '';
+      const isDynamic = file.source === 'dynamic';
+      const deleteDisabled = isDynamic ? ' disabled' : '';
       const row = document.createElement('tr');
       row.innerHTML =
-        '<td><input class="file-selector" data-hash="' + file.hash + '" type="checkbox"' + checked + '></td>' +
+        '<td><input class="file-selector" data-hash="' + file.hash + '" type="checkbox"' + checked + (isDynamic ? ' disabled' : '') + '></td>' +
         '<td><a class="row-link" href="/files/' + file.hash + '">' + (file.name || '-') + '</a></td>' +
         '<td>' + (file.file_type || '-') + '</td>' +
         '<td>' + formatBytes(file.size) + '</td>' +
+        '<td>' + formatSourceLabel(file.source) + '</td>' +
         '<td>' + (file.sources || 0) + '</td>' +
-        '<td><button type="button" class="ghost danger">' + i18n.btnDelete + '</button></td>';
+        '<td><button type="button" class="ghost danger"' + deleteDisabled + '>' + i18n.btnDelete + '</button></td>';
       row.querySelector('a').addEventListener('click', function (event) {
         event.preventDefault();
         pushRoute('/files/' + file.hash);
@@ -325,6 +353,9 @@ const adminUIScript = `(() => {
       });
       row.querySelector('button').addEventListener('click', function (event) {
         event.stopPropagation();
+        if (isDynamic) {
+          return;
+        }
         deleteFile(file.hash).catch((error) => setToast(error.message, true));
       });
       row.addEventListener('click', function (event) {
@@ -335,7 +366,7 @@ const adminUIScript = `(() => {
       filesBody.appendChild(row);
     });
     if (!data.length) {
-      filesBody.innerHTML = '<tr><td colspan="6" class="empty">' + i18n.emptyFiles + '</td></tr>';
+      filesBody.innerHTML = '<tr><td colspan="7" class="empty">' + i18n.emptyFiles + '</td></tr>';
     }
     updatePager('files', payload.meta || {});
   }
@@ -479,7 +510,7 @@ const adminUIScript = `(() => {
       loadClients().catch((error) => setToast(error.message, true));
     }, 180);
   });
-  [fileSearch, fileTypeFilter].forEach(function (node) {
+  [fileSearch, fileTypeFilter, fileSourceFilter].forEach(function (node) {
     node.addEventListener('input', function () {
       state.filesPage = 1;
       window.clearTimeout(fileSearchTimer);

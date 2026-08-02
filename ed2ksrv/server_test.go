@@ -724,6 +724,10 @@ func getJSON[T any](t *testing.T, request *http.Request, out *T) map[string]any 
 }
 
 func postJSON(t *testing.T, request *http.Request, wantStatus int, metaOut *map[string]any) {
+	postJSONData(t, request, wantStatus, nil, metaOut)
+}
+
+func postJSONData(t *testing.T, request *http.Request, wantStatus int, dataOut *map[string]any, metaOut *map[string]any) map[string]any {
 	t.Helper()
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
@@ -735,9 +739,10 @@ func postJSON(t *testing.T, request *http.Request, wantStatus int, metaOut *map[
 		t.Fatalf("unexpected status %d for %s: %s", response.StatusCode, request.URL.String(), string(raw))
 	}
 	var envelope struct {
-		OK   bool           `json:"ok"`
-		Meta map[string]any `json:"meta"`
-		Err  string         `json:"error"`
+		OK   bool            `json:"ok"`
+		Data json.RawMessage `json:"data"`
+		Meta map[string]any  `json:"meta"`
+		Err  string          `json:"error"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
 		t.Fatalf("decode envelope %s: %v", request.URL.String(), err)
@@ -745,9 +750,15 @@ func postJSON(t *testing.T, request *http.Request, wantStatus int, metaOut *map[
 	if !envelope.OK {
 		t.Fatalf("unexpected error envelope for %s: %s", request.URL.String(), envelope.Err)
 	}
+	if dataOut != nil && envelope.Data != nil {
+		if err := json.Unmarshal(envelope.Data, dataOut); err != nil {
+			t.Fatalf("decode data %s: %v", request.URL.String(), err)
+		}
+	}
 	if metaOut != nil {
 		*metaOut = envelope.Meta
 	}
+	return envelope.Meta
 }
 
 func assertUnauthorized(t *testing.T, url string) {

@@ -65,6 +65,9 @@ type adminHTMLStrings struct {
 	ThFType            string
 	ThSize             string
 	ThSources          string
+	ThCatalogSource    string
+	FileSourceL        string
+	FileSourcePh       string
 	ThActions          string
 	RegKicker          string
 	RegTitle           string
@@ -103,6 +106,10 @@ type adminJSStrings struct {
 	EmptyFiles           string `json:"emptyFiles"`
 	EmptyAudit           string `json:"emptyAudit"`
 	BtnDelete            string `json:"btnDelete"`
+	BtnRevokeOffers      string `json:"btnRevokeOffers"`
+	SourceStatic         string `json:"sourceStatic"`
+	SourceDynamic        string `json:"sourceDynamic"`
+	ToastRevoked         string `json:"toastRevoked"`
 	ToastDeleted         string `json:"toastDeleted"`
 	ToastNoSelection     string `json:"toastNoSelection"`
 	ToastBatchDone       string `json:"toastBatchDone"`
@@ -162,6 +169,9 @@ var adminLocales = map[string]struct {
 			ThFType:           "Type",
 			ThSize:            "Size",
 			ThSources:         "Sources",
+			ThCatalogSource:   "Catalog",
+			FileSourceL:       "Catalog",
+			FileSourcePh:      "static / dynamic",
 			ThActions:         "Actions",
 			RegKicker:         "Register",
 			RegTitle:          "Add shared file",
@@ -199,7 +209,11 @@ var adminLocales = map[string]struct {
 			EmptyFiles:           "No shared files",
 			EmptyAudit:           "No audit entries",
 			BtnDelete:            "Delete",
+			BtnRevokeOffers:      "Revoke offers",
+			SourceStatic:         "Static",
+			SourceDynamic:        "Dynamic",
 			ToastDeleted:         "Shared file deleted",
+			ToastRevoked:         "Client shared files revoked",
 			ToastNoSelection:     "No shared files selected",
 			ToastBatchDone:       "Batch delete completed",
 			ToastInvalidToken:    "Invalid token, please sign in again",
@@ -253,7 +267,10 @@ var adminLocales = map[string]struct {
 			ThFName:           "文件名",
 			ThFType:           "类型",
 			ThSize:            "大小",
-			ThSources:         "来源",
+			ThSources:         "来源数",
+			ThCatalogSource:   "索引",
+			FileSourceL:       "索引",
+			FileSourcePh:      "static / dynamic",
 			ThActions:         "操作",
 			RegKicker:         "Register",
 			RegTitle:          "新增共享文件",
@@ -291,7 +308,11 @@ var adminLocales = map[string]struct {
 			EmptyFiles:             "没有共享文件",
 			EmptyAudit:             "暂无审计日志",
 			BtnDelete:              "删除",
+			BtnRevokeOffers:        "撤销共享",
+			SourceStatic:           "静态",
+			SourceDynamic:          "动态",
 			ToastDeleted:           "共享文件已删除",
+			ToastRevoked:           "已撤销客户端动态共享",
 			ToastNoSelection:       "没有选中的共享文件",
 			ToastBatchDone:         "批量删除完成",
 			ToastInvalidToken:      "令牌无效，请重新登录",
