@@ -86,6 +86,7 @@
                   <th>{{.T.ThRemote}}</th>
                   <th>{{.T.ThListen}}</th>
                   <th>{{.T.ThLastSeen}}</th>
+                  <th>{{.T.ThActions}}</th>
                 </tr>
               </thead>
               <tbody id="clientsBody"></tbody>
@@ -113,6 +114,10 @@
                 <span>{{.T.FileTypeL}}</span>
                 <input id="fileTypeFilter" type="search" placeholder="{{.T.FileTypePh}}">
               </label>
+              <label class="compact-field">
+                <span>{{.T.FileSourceL}}</span>
+                <input id="fileSourceFilter" type="search" placeholder="{{.T.FileSourcePh}}">
+              </label>
               <button id="deleteSelectedButton" type="button" class="ghost danger">{{.T.BtnBatchDelete}}</button>
             </div>
           </div>
@@ -124,6 +129,7 @@
                   <th>{{.T.ThFName}}</th>
                   <th>{{.T.ThFType}}</th>
                   <th>{{.T.ThSize}}</th>
+                  <th>{{.T.ThCatalogSource}}</th>
                   <th>{{.T.ThSources}}</th>
                   <th>{{.T.ThActions}}</th>
                 </tr>

@@ -47,7 +47,7 @@ When `server_udp` is enabled, the server listens on **TCP port + `udp_port_offse
 - Dynamic user table and runtime statistics
 - Dynamic shared file index (in-memory; search and source lookup)
 - Static catalog persisted to JSON, MySQL, or PostgreSQL
-- HTTP admin API and embedded Web UI (Chinese/English at `/`)
+- HTTP admin API and embedded Web UI (Chinese/English at `/`), including static/dynamic file source labels and per-client offer revocation
 - Admin API token authentication, pagination, filtering, sorting
 - Low-ID `ReportedIP` fill (`reported_public_ip` or auto-detected public source IP)
 - Health checks
@@ -59,6 +59,7 @@ When `server_udp` is enabled, the server listens on **TCP port + `udp_port_offse
 - [ed2ksrv/server_udp.go](ed2ksrv/server_udp.go): ED2K UDP replies (status, search, sources, callback, …)
 - [ed2ksrv/server_udp_callback.go](ed2ksrv/server_udp_callback.go): UDP callback relay `OP_GLOBCALLBACKREQ`
 - [ed2ksrv/admin.go](ed2ksrv/admin.go): HTTP admin API
+- [ed2ksrv/admin_files.go](ed2ksrv/admin_files.go): admin file source labeling and client offer revocation
 - [ed2ksrv/admin_ui.go](ed2ksrv/admin_ui.go): embedded Web admin UI
 - [ed2ksrv/catalog.go](ed2ksrv/catalog.go): shared catalog and persistence
 - [ed2ksrv/offerfiles.go](ed2ksrv/offerfiles.go): `OP_OFFERFILES` handling
@@ -461,9 +462,15 @@ Query parameters:
 - `search`: filter by file name or hash (substring)
 - `file_type`: filter by file type
 - `extension`: filter by extension
+- `source`: filter by catalog source — `static` (persisted catalog) or `dynamic` (client `OP_OFFERFILES`)
 - `page`: page number (default `1`)
 - `per_page`: page size (default `50`, max `500`)
-- `sort`: `name`, `size`, `sources`
+- `sort`: `name`, `size`, `sources`, `source`
+
+Each record includes:
+
+- `source`: `static` or `dynamic`
+- `offering_client_ids`: for dynamic entries, online client IDs offering the file
 
 Example:
 
@@ -508,12 +515,28 @@ curl -X POST \
 
 #### `DELETE /api/files/{hash}`
 
+Only static catalog entries can be deleted. Returns `409 Conflict` when the hash exists only in the dynamic index.
+
 Example:
 
 ```bash
 curl -X DELETE \
   -H 'X-Admin-Token: change-me' \
   http://127.0.0.1:8080/api/files/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+```
+
+### Revoke client dynamic shares
+
+#### `POST /api/clients/{id}/revoke-offers`
+
+Clears dynamically shared files registered by the given online client via `OP_OFFERFILES`, without disconnecting the TCP session.
+
+Example:
+
+```bash
+curl -X POST \
+  -H 'X-Admin-Token: change-me' \
+  http://127.0.0.1:8080/api/clients/2130706433/revoke-offers
 ```
 
 ### Persist catalog manually
@@ -550,7 +573,7 @@ Coverage includes:
 ## Current limitations
 
 - The reference `goed2k` client does not yet send `OP_OFFERFILES`; end-to-end dynamic sharing needs client support
-- Dynamic share index is in-memory only; admin APIs manage the static catalog only
+- Dynamic share index is in-memory only; admin APIs label sources and can revoke per-client offers, but `POST/DELETE /api/files` only manage the static catalog
 - Advanced publish flows (incremental updates, fine-grained publish state) are not implemented
 - Multiple TCP clients behind the same public IP share one high client ID (assigned by source IP); later logins replace earlier sessions
 - Single `admin_token` only; no RBAC; audit log is in-memory (last 200 entries)
@@ -562,5 +585,4 @@ Coverage includes:
 1. Add `OP_OFFERFILES` send logic in the `goed2k` client
 2. Add OpenAPI docs and Swagger UI
 3. Persist audit logs and add RBAC
-4. Label dynamic vs static shares in admin APIs
-5. Optional SQLite storage backend
+4. Optional SQLite storage backend

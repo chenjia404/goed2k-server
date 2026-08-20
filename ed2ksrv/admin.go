@@ -131,18 +131,59 @@ func (s *Server) handleAdminClients(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminClientByID(w http.ResponseWriter, r *http.Request) {
-	clientIDText := strings.TrimPrefix(r.URL.Path, "/api/clients/")
-	if clientIDText == "" {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/clients/")
+	if rest == "" {
 		writeAPIError(w, http.StatusBadRequest, fmt.Errorf("missing client id"))
+		return
+	}
+	parts := strings.SplitN(rest, "/", 2)
+	clientID, err := strconv.ParseInt(parts[0], 10, 32)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, fmt.Errorf("invalid client id: %w", err))
+		return
+	}
+	if len(parts) == 2 {
+		switch parts[1] {
+		case "revoke-offers":
+			if r.Method != http.MethodPost {
+				writeMethodNotAllowed(w, http.MethodPost)
+				return
+			}
+			count, err := s.RevokeClientOfferedFiles(int32(clientID))
+			if err != nil {
+				status := http.StatusInternalServerError
+				if errors.Is(err, errClientNotFound) {
+					status = http.StatusNotFound
+				}
+				s.appendAudit(AuditEntry{
+					Action:     "revoke_offers",
+					Resource:   "client",
+					ResourceID: parts[0],
+					RemoteAddr: r.RemoteAddr,
+					Status:     "error",
+					Detail:     err.Error(),
+				})
+				writeAPIError(w, status, err)
+				return
+			}
+			s.appendAudit(AuditEntry{
+				Action:     "revoke_offers",
+				Resource:   "client",
+				ResourceID: parts[0],
+				RemoteAddr: r.RemoteAddr,
+				Detail:     fmt.Sprintf("revoked=%d", count),
+			})
+			writeAPI(w, http.StatusOK, map[string]any{
+				"client_id":       clientID,
+				"revoked_offers": count,
+			}, map[string]any{"status": "revoked"})
+		default:
+			writeAPIError(w, http.StatusNotFound, fmt.Errorf("unknown client action"))
+		}
 		return
 	}
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w, http.MethodGet)
-		return
-	}
-	clientID, err := strconv.ParseInt(clientIDText, 10, 32)
-	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, fmt.Errorf("invalid client id: %w", err))
 		return
 	}
 	client, ok := s.ClientSnapshotByID(int32(clientID))
@@ -156,10 +197,10 @@ func (s *Server) handleAdminClientByID(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAdminFiles(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		files := s.FilesSnapshot()
-		files = filterFiles(files, r)
-		sortFiles(files, r.URL.Query().Get("sort"))
-		items, meta := paginateFiles(files, r)
+		files := s.FilesAdminSnapshot()
+		files = filterAdminFiles(files, r)
+		sortAdminFiles(files, r.URL.Query().Get("sort"))
+		items, meta := paginateAdminFiles(files, r)
 		writeAPI(w, http.StatusOK, items, meta)
 	case http.MethodPost:
 		var record FileRecord
@@ -173,7 +214,7 @@ func (s *Server) handleAdminFiles(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, http.StatusBadRequest, err)
 			return
 		}
-		stored, _ := s.FileSnapshot(record.Hash)
+		stored, _ := s.FileAdminSnapshot(record.Hash)
 		s.appendAudit(AuditEntry{Action: "upsert", Resource: "file", ResourceID: record.Hash.String(), RemoteAddr: r.RemoteAddr})
 		writeAPI(w, http.StatusCreated, stored, map[string]any{"status": "upserted"})
 	default:
@@ -196,10 +237,15 @@ func (s *Server) handleAdminBatchDeleteFiles(w http.ResponseWriter, r *http.Requ
 	}
 	deleted := make([]string, 0, len(request.Hashes))
 	missing := make([]string, 0)
+	skippedDynamic := make([]string, 0)
 	for _, hashText := range request.Hashes {
 		hash, err := protocol.HashFromString(hashText)
 		if err != nil {
 			missing = append(missing, hashText)
+			continue
+		}
+		if s.isDynamicOnlyFile(hash) {
+			skippedDynamic = append(skippedDynamic, hash.String())
 			continue
 		}
 		ok, err := s.DeleteFile(hash)
@@ -218,11 +264,12 @@ func (s *Server) handleAdminBatchDeleteFiles(w http.ResponseWriter, r *http.Requ
 		Action:     "batch_delete",
 		Resource:   "file",
 		RemoteAddr: r.RemoteAddr,
-		Detail:     fmt.Sprintf("deleted=%d missing=%d", len(deleted), len(missing)),
+		Detail:     fmt.Sprintf("deleted=%d missing=%d skipped_dynamic=%d", len(deleted), len(missing), len(skippedDynamic)),
 	})
 	writeAPI(w, http.StatusOK, map[string]any{
-		"deleted": deleted,
-		"missing": missing,
+		"deleted":         deleted,
+		"missing":         missing,
+		"skipped_dynamic": skippedDynamic,
 	}, map[string]any{"status": "batch_deleted"})
 }
 
@@ -239,13 +286,25 @@ func (s *Server) handleAdminFileByHash(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		record, ok := s.FileSnapshot(hash)
+		record, ok := s.FileAdminSnapshot(hash)
 		if !ok {
 			writeAPIError(w, http.StatusNotFound, fmt.Errorf("file not found"))
 			return
 		}
 		writeAPI(w, http.StatusOK, record, nil)
 	case http.MethodDelete:
+		if s.isDynamicOnlyFile(hash) {
+			s.appendAudit(AuditEntry{
+				Action:     "delete",
+				Resource:   "file",
+				ResourceID: hash.String(),
+				RemoteAddr: r.RemoteAddr,
+				Status:     "error",
+				Detail:     "dynamic shared file cannot be deleted via admin API",
+			})
+			writeAPIError(w, http.StatusConflict, fmt.Errorf("dynamic shared file cannot be deleted via admin API; revoke client offers or disconnect the client"))
+			return
+		}
 		deleted, err := s.DeleteFile(hash)
 		if err != nil {
 			s.appendAudit(AuditEntry{Action: "delete", Resource: "file", ResourceID: hash.String(), RemoteAddr: r.RemoteAddr, Status: "error", Detail: err.Error()})
@@ -278,41 +337,6 @@ func (s *Server) handleAdminPersist(w http.ResponseWriter, r *http.Request) {
 	writeAPI(w, http.StatusOK, map[string]any{"catalog_path": s.catalog.Path()}, map[string]any{"status": "persisted"})
 }
 
-func filterFiles(files []FileRecord, r *http.Request) []FileRecord {
-	search := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("search")))
-	fileType := strings.TrimSpace(r.URL.Query().Get("file_type"))
-	ext := strings.TrimSpace(r.URL.Query().Get("extension"))
-	out := make([]FileRecord, 0, len(files))
-	for _, file := range files {
-		if search != "" &&
-			!strings.Contains(strings.ToLower(file.Name), search) &&
-			!strings.Contains(strings.ToLower(file.Hash.String()), search) {
-			continue
-		}
-		if fileType != "" && !strings.EqualFold(file.FileType, fileType) {
-			continue
-		}
-		if ext != "" && !strings.EqualFold(file.Extension, ext) {
-			continue
-		}
-		out = append(out, file)
-	}
-	return out
-}
-
-func sortFiles(files []FileRecord, field string) {
-	switch field {
-	case "size":
-		sort.Slice(files, func(i, j int) bool { return files[i].Size > files[j].Size })
-	case "sources":
-		sort.Slice(files, func(i, j int) bool { return files[i].Sources > files[j].Sources })
-	case "name":
-		fallthrough
-	default:
-		sort.Slice(files, func(i, j int) bool { return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name) })
-	}
-}
-
 func sortClients(clients []ClientSnapshot, field string) {
 	switch field {
 	case "connected_at":
@@ -326,16 +350,6 @@ func sortClients(clients []ClientSnapshot, field string) {
 	default:
 		sort.Slice(clients, func(i, j int) bool { return clients[i].ClientID < clients[j].ClientID })
 	}
-}
-
-func paginateFiles(files []FileRecord, r *http.Request) ([]FileRecord, map[string]any) {
-	page, perPage := parsePagination(r)
-	start, end := bounds(len(files), page, perPage)
-	items := []FileRecord{}
-	if start < len(files) {
-		items = files[start:end]
-	}
-	return items, pageMeta(page, perPage, len(files), len(items))
 }
 
 func paginateClients(clients []ClientSnapshot, r *http.Request) ([]ClientSnapshot, map[string]any) {
